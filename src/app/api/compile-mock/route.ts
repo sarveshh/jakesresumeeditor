@@ -52,7 +52,7 @@ export async function POST(request: NextRequest) {
         skipNextLines--;
         continue;
       }
-      
+
       const line = lines[i].trim();
       if (!line || line.startsWith("%")) continue;
 
@@ -132,28 +132,181 @@ export async function POST(request: NextRequest) {
       }
 
       // Contact line in center (with \small, \href, $|$)
-      if (inCenter && (line.includes("\\small") || line.includes("\\href") || line.includes("$|$"))) {
-        const contact = line
-          .replace(/\\small/g, "")
-          .replace(/\\href\{([^}]+)\}\{\\underline\{([^}]+)\}\}/g, "$2")
-          .replace(/\\href\{mailto:([^}]+)\}\{\\underline\{([^}]+)\}\}/g, "$2")
-          .replace(/\\href\{([^}]+)\}\{([^}]+)\}/g, "$2")
-          .replace(/\$\|\$/g, " | ")
-          .replace(/\\n\s*/g, " ")
-          .replace(/\\\\/g, "")
-          .replace(/[{}]/g, "")
-          .trim();
+      if (
+        inCenter &&
+        (line.includes("\\small") ||
+          line.includes("\\href") ||
+          line.includes("$|$"))
+      ) {
+        // Extract links and text
+        const hrefMatches = [
+          ...line.matchAll(
+            /\\href\{([^}]+)\}\{\\underline\{([^}]+)\}\}|\\href\{mailto:([^}]+)\}\{\\underline\{([^}]+)\}\}|\\href\{([^}]+)\}\{([^}]+)\}/g
+          ),
+        ];
 
-        if (contact && contact.length > 0 && contact.length < 250) {
-          checkNewPage(15);
-          page.drawText(contact, {
-            x: width / 2 - contact.length * 2.5,
-            y: y,
-            size: 10,
-            font: font,
-            color: rgb(0, 0, 0),
-          });
+        if (hrefMatches.length > 0) {
+          const yPosition = y;
+
+          // Split by parts: plain text and links
+          const remainingLine = line
+            .replace(/\\small/g, "")
+            .replace(/\\\\/g, "")
+            .replace(/\\n\s*/g, " ");
+
+          // Calculate total width first to center the entire line
+          let totalWidth = 0;
+
+          // Check if there's phone number
+          const phoneMatch = remainingLine.match(/^\s*([\+\d\s-]+)\s*\$\|\$/);
+          if (phoneMatch) {
+            const phone = phoneMatch[1].trim();
+            totalWidth += (phone.length + 3) * 5.5; // phone + " | "
+          }
+
+          // Add width of each link + separators
+          for (let i = 0; i < hrefMatches.length; i++) {
+            const match = hrefMatches[i];
+            const label = match[2] || match[4] || match[6];
+            if (label) {
+              const cleanLabel = label
+                .replace(/\\underline\{([^}]+)\}/g, "$1")
+                .replace(/[{}]/g, "");
+              totalWidth += cleanLabel.length * 5.5;
+              if (i < hrefMatches.length - 1) {
+                totalWidth += 15; // separator " | "
+              }
+            }
+          }
+
+          // Start from center - half of total width
+          let xPosition = (width - totalWidth) / 2;
+
+          // Draw phone number if exists
+          if (phoneMatch) {
+            const phone = phoneMatch[1].trim();
+            page.drawText(phone + " | ", {
+              x: xPosition,
+              y: yPosition,
+              size: 10,
+              font: font,
+              color: rgb(0, 0, 0),
+            });
+            xPosition += (phone.length + 3) * 5.5;
+          }
+
+          // Now draw each link
+          for (let i = 0; i < hrefMatches.length; i++) {
+            const match = hrefMatches[i];
+            const url = match[1] || match[3] || match[5];
+            const label = match[2] || match[4] || match[6];
+
+            if (url && label) {
+              const cleanLabel = label
+                .replace(/\\underline\{([^}]+)\}/g, "$1")
+                .replace(/[{}]/g, "");
+              const cleanUrl = url.replace(/mailto:/g, "");
+
+              // Draw the link text (black, not blue)
+              page.drawText(cleanLabel, {
+                x: xPosition,
+                y: yPosition,
+                size: 10,
+                font: font,
+                color: rgb(0, 0, 0), // Black color like regular text
+              });
+
+              // Add underline for links
+              const linkWidth = cleanLabel.length * 5.5;
+              page.drawLine({
+                start: { x: xPosition, y: yPosition - 1 },
+                end: { x: xPosition + linkWidth, y: yPosition - 1 },
+                thickness: 0.5,
+                color: rgb(0, 0, 0), // Black underline
+              });
+
+              // Create clickable link annotation
+              const linkAnnot = pdfDoc.context.obj({
+                Type: "Annot",
+                Subtype: "Link",
+                Rect: [
+                  xPosition,
+                  yPosition - 2,
+                  xPosition + linkWidth,
+                  yPosition + 12,
+                ],
+                Border: [0, 0, 0],
+                A: pdfDoc.context.obj({
+                  S: "URI",
+                  URI: pdfDoc.context.obj(
+                    url.startsWith("http") || url.startsWith("mailto:")
+                      ? url
+                      : `https://${cleanUrl}`
+                  ),
+                }),
+              });
+
+              // Add annotation to page
+              const annots = page.node.get(pdfDoc.context.obj("Annots"));
+              if (annots) {
+                const annotsArray = page.node.context.lookup(annots);
+                if (annotsArray instanceof Array) {
+                  page.node.set(
+                    pdfDoc.context.obj("Annots"),
+                    pdfDoc.context.obj([...annotsArray, linkAnnot])
+                  );
+                }
+              } else {
+                page.node.set(
+                  pdfDoc.context.obj("Annots"),
+                  pdfDoc.context.obj([linkAnnot])
+                );
+              }
+
+              xPosition += linkWidth + 15; // Space after link and separator
+
+              // Add separator if not last
+              if (i < hrefMatches.length - 1) {
+                page.drawText("| ", {
+                  x: xPosition,
+                  y: yPosition,
+                  size: 10,
+                  font: font,
+                  color: rgb(0, 0, 0),
+                });
+                xPosition += 10;
+              }
+            }
+          }
+
           y -= 14;
+        } else {
+          // Fallback to simple text rendering if no links found
+          const contact = line
+            .replace(/\\small/g, "")
+            .replace(/\\href\{([^}]+)\}\{\\underline\{([^}]+)\}\}/g, "$2")
+            .replace(
+              /\\href\{mailto:([^}]+)\}\{\\underline\{([^}]+)\}\}/g,
+              "$2"
+            )
+            .replace(/\\href\{([^}]+)\}\{([^}]+)\}/g, "$2")
+            .replace(/\$\|\$/g, " | ")
+            .replace(/\\n\s*/g, " ")
+            .replace(/\\\\/g, "")
+            .replace(/[{}]/g, "")
+            .trim();
+
+          if (contact && contact.length > 0 && contact.length < 250) {
+            checkNewPage(15);
+            page.drawText(contact, {
+              x: width / 2 - contact.length * 2.5,
+              y: y,
+              size: 10,
+              font: font,
+              color: rgb(0, 0, 0),
+            });
+            y -= 14;
+          }
         }
         continue;
       }
@@ -166,6 +319,8 @@ export async function POST(request: NextRequest) {
           .replace(/\\scshape/g, "")
           .trim()
           .toUpperCase();
+
+        console.log("📋 Section:", currentSection, "Y:", y);
 
         page.drawText(currentSection, {
           x: margin,
@@ -191,12 +346,16 @@ export async function POST(request: NextRequest) {
         let fullLine = line;
         let lineIdx = i;
         let consumed = 0;
-        
+
         // Keep reading lines until we have all 4 arguments (4 opening and 4 closing braces)
         let openBraces = (fullLine.match(/{/g) || []).length;
         let closeBraces = (fullLine.match(/}/g) || []).length;
-        
-        while (openBraces < 4 || closeBraces < 4 || openBraces !== closeBraces) {
+
+        while (
+          openBraces < 4 ||
+          closeBraces < 4 ||
+          openBraces !== closeBraces
+        ) {
           lineIdx++;
           consumed++;
           if (lineIdx >= lines.length) break;
@@ -205,17 +364,19 @@ export async function POST(request: NextRequest) {
           fullLine += " " + nextLine;
           openBraces = (fullLine.match(/{/g) || []).length;
           closeBraces = (fullLine.match(/}/g) || []).length;
-          
+
           // Safety break if we've consumed too many lines
           if (consumed > 10) break;
         }
-        
+
         // Extract the four arguments
         const match = fullLine.match(
           /\\resumeSubheading\s*{([^}]+)}\s*{([^}]+)}\s*{([^}]+)}\s*{([^}]+)}/
         );
         if (match) {
           const [, company, dates, role, location] = match;
+          
+          console.log("🏢 resumeSubheading - Company:", company, "Dates:", dates, "Role:", role, "Location:", location, "Y:", y);
 
           // Line 1: Company (left, bold) | Dates (right)
           page.drawText(company, {
@@ -257,7 +418,7 @@ export async function POST(request: NextRequest) {
             });
           }
           y -= 14;
-          
+
           // Skip the lines we consumed
           skipNextLines = consumed;
         }
@@ -266,8 +427,7 @@ export async function POST(request: NextRequest) {
       else if (line.match(/^\s*{[^}]*}\s*{[^}]*}\s*$/)) {
         // This is likely part of a command we should have caught - skip it
         continue;
-      }
-      else if (line.match(/^\s*{[^}]*}\s*$/)) {
+      } else if (line.match(/^\s*{[^}]*}\s*$/)) {
         // Single argument line - skip it
         continue;
       }
@@ -280,23 +440,73 @@ export async function POST(request: NextRequest) {
       ) {
         continue;
       }
-      // Handle \resumeProjectHeading{Project | Tech}{Date}
+            // Handle \resumeProjectHeading{Project | Tech}{Date}
       else if (line.includes("\\resumeProjectHeading")) {
         checkNewPage(30);
-        
+
         // Extract arguments - may be multiline
         let fullLine = line;
         let lineIdx = i;
         let consumed = 0;
-        
+
         while ((fullLine.match(/{/g) || []).length < 2 || (fullLine.match(/}/g) || []).length < 2) {
           lineIdx++;
           consumed++;
           if (lineIdx >= lines.length) break;
           fullLine += " " + lines[lineIdx].trim();
         }
-        
+
         const match = fullLine.match(/\\resumeProjectHeading\s*{([^}]+)}\s*{([^}]*)}/);
+        if (match) {
+          const [, projectTech, dates] = match;
+          
+          console.log("🎯 resumeProjectHeading - Title:", projectTech, "Dates:", dates, "Y:", y);
+
+          page.drawText(projectTech, {
+            x: margin,
+            y: y,
+            size: 10,
+            font: boldFont,
+            color: rgb(0, 0, 0),
+          });
+
+          if (dates && dates.trim()) {
+            const cleanDates = dates.replace(/--/g, "–");
+            page.drawText(cleanDates, {
+              x: width - margin - cleanDates.length * 5.5,
+              y: y,
+              size: 10,
+              font: font,
+              color: rgb(0, 0, 0),
+            });
+          }
+          y -= 14;
+          skipNextLines = consumed;
+        } else {
+          console.log("❌ resumeProjectHeading NO MATCH - Line:", fullLine);
+        }
+      }
+      else if (line.includes("\\resumeProjectHeading")) {
+        checkNewPage(30);
+
+        // Extract arguments - may be multiline
+        let fullLine = line;
+        let lineIdx = i;
+        let consumed = 0;
+
+        while (
+          (fullLine.match(/{/g) || []).length < 2 ||
+          (fullLine.match(/}/g) || []).length < 2
+        ) {
+          lineIdx++;
+          consumed++;
+          if (lineIdx >= lines.length) break;
+          fullLine += " " + lines[lineIdx].trim();
+        }
+
+        const match = fullLine.match(
+          /\\resumeProjectHeading\s*{([^}]+)}\s*{([^}]*)}/
+        );
         if (match) {
           const [, projectTech, dates] = match;
 
@@ -525,7 +735,7 @@ export async function POST(request: NextRequest) {
           const category = match[1];
           const skills = match[2];
           const text = `${category}: ${skills}`;
-          
+
           page.drawText(text, {
             x: margin,
             y: y,
@@ -565,17 +775,21 @@ export async function POST(request: NextRequest) {
         if (line.match(/^[{}]+$/) || line.match(/^{[^}]*}$/)) {
           continue;
         }
-        
+
         // Skip lines that look like standalone dates (e.g., "Jun 2023 – Present")
         if (line.match(/^\w{3}\s+\d{4}\s*[–-]\s*(\w{3}\s+\d{4}|Present)$/i)) {
           continue;
         }
-        
+
         // Skip lines that are just city names (common locations)
-        if (line.match(/^(Mumbai|Pune|Delhi|Bangalore|Hyderabad|Chennai|Kolkata|Remote)$/i)) {
+        if (
+          line.match(
+            /^(Mumbai|Pune|Delhi|Bangalore|Hyderabad|Chennai|Kolkata|Remote)$/i
+          )
+        ) {
           continue;
         }
-        
+
         checkNewPage(15);
         const text = line.trim();
         if (text && !text.match(/^(begin|end|document|item)/)) {

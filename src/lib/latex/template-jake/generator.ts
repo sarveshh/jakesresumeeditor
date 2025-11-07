@@ -4,13 +4,13 @@
  */
 
 import {
-    CustomEntry,
-    EducationEntry,
-    ExperienceEntry,
-    ProjectEntry,
-    Resume,
-    ResumeSection,
-    SkillsEntry,
+  CustomEntry,
+  EducationEntry,
+  ExperienceEntry,
+  ProjectEntry,
+  Resume,
+  ResumeSection,
+  SkillsEntry,
 } from "../../resume-model";
 
 export function generateLatex(resume: Resume): string {
@@ -251,6 +251,8 @@ function generateSkills(entry: SkillsEntry): string {
 }
 
 function generateCustom(entry: CustomEntry): string {
+  console.log("🎨 generateCustom called with:", JSON.stringify(entry, null, 2));
+  
   // Handle single date (for certifications/awards with just one date)
   const singleDate =
     entry.startDate && !entry.endDate ? formatSingleDate(entry.startDate) : "";
@@ -266,18 +268,20 @@ function generateCustom(entry: CustomEntry): string {
   if (!hasBullets) {
     const subtitle = entry.subtitle || "";
     const location = entry.location || displayDate || "";
-
-    return `
+    
+    const latex = `
     \\resumeSubheading
       {${escapeLaTeX(entry.title)}}{${location}}
       {${subtitle}}{}`;
+    console.log("📝 Generated LaTeX (no bullets):", latex);
+    return latex;
   }
 
   // For entries with bullets
   const location = entry.location || displayDate || "";
   const subtitle = entry.subtitle || "";
 
-  return `
+  const latex = `
     \\resumeSubheading
       {${escapeLaTeX(entry.title)}}{${location}}
       {${subtitle}}{}
@@ -287,6 +291,8 @@ ${entry.bullets
   .map((b) => `        \\resumeItem{${escapeLaTeX(b)}}`)
   .join("\n")}
       \\resumeItemListEnd`;
+  console.log("📝 Generated LaTeX (with bullets):", latex);
+  return latex;
 }
 
 function formatSingleDate(date: string): string {
