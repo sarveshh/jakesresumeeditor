@@ -3,70 +3,170 @@
  * Converts Resume model to LaTeX source code
  */
 
-import { CustomEntry, EducationEntry, ExperienceEntry, ProjectEntry, Resume, ResumeSection, SkillsEntry } from '../../resume-model';
+import {
+    CustomEntry,
+    EducationEntry,
+    ExperienceEntry,
+    ProjectEntry,
+    Resume,
+    ResumeSection,
+    SkillsEntry,
+} from "../../resume-model";
 
 export function generateLatex(resume: Resume): string {
-  return `\\documentclass[11pt,letterpaper]{article}
+  return `\\documentclass[letterpaper,11pt]{article}
 
-% ATS-Compliant Resume Template
-% No tables, icons, or fancy formatting
-% Uses standard fonts and maintains text layer
-
-\\usepackage[utf8]{inputenc}
-\\usepackage[margin=0.75in]{geometry}
-\\usepackage{enumitem}
-\\usepackage{hyperref}
-
-% Remove page numbers
-\\pagestyle{empty}
-
-% Customize section formatting
+\\usepackage{latexsym}
+\\usepackage[empty]{fullpage}
 \\usepackage{titlesec}
-\\titleformat{\\section}{\\large\\bfseries}{}{0em}{}[\\titlerule]
-\\titlespacing*{\\section}{0pt}{12pt}{6pt}
+\\usepackage{marvosym}
+\\usepackage[usenames,dvipsnames]{color}
+\\usepackage{verbatim}
+\\usepackage{enumitem}
+\\usepackage[hidelinks]{hyperref}
+\\usepackage{fancyhdr}
+\\usepackage[english]{babel}
+\\usepackage{tabularx}
+\\input{glyphtounicode}
 
-% Compact lists
-\\setlist[itemize]{leftmargin=*,itemsep=0pt,parsep=0pt,topsep=2pt}
+\\pagestyle{fancy}
+\\fancyhf{} % clear all header and footer fields
+\\fancyfoot{}
+\\renewcommand{\\headrulewidth}{0pt}
+\\renewcommand{\\footrulewidth}{0pt}
+
+% Adjust margins
+\\addtolength{\\oddsidemargin}{-0.5in}
+\\addtolength{\\evensidemargin}{-0.5in}
+\\addtolength{\\textwidth}{1in}
+\\addtolength{\\topmargin}{-.5in}
+\\addtolength{\\textheight}{1.0in}
+
+\\urlstyle{same}
+
+\\raggedbottom
+\\raggedright
+\\setlength{\\tabcolsep}{0in}
+
+% Sections formatting
+\\titleformat{\\section}{
+  \\vspace{-4pt}\\scshape\\raggedright\\large
+}{}{0em}{}[\\color{black}\\titlerule \\vspace{-5pt}]
+
+% Ensure that generate pdf is machine readable/ATS parsable
+\\pdfgentounicode=1
+
+%-------------------------
+% Custom commands
+\\newcommand{\\resumeItem}[1]{
+  \\item\\small{
+    {#1 \\vspace{-2pt}}
+  }
+}
+
+\\newcommand{\\resumeSubheading}[4]{
+  \\vspace{-2pt}\\item
+    \\begin{tabular*}{0.97\\textwidth}[t]{l@{\\extracolsep{\\fill}}r}
+      \\textbf{#1} & #2 \\\\
+      \\textit{\\small#3} & \\textit{\\small #4} \\\\
+    \\end{tabular*}\\vspace{-7pt}
+}
+
+\\newcommand{\\resumeSubSubheading}[2]{
+    \\item
+    \\begin{tabular*}{0.97\\textwidth}{l@{\\extracolsep{\\fill}}r}
+      \\textit{\\small#1} & \\textit{\\small #2} \\\\
+    \\end{tabular*}\\vspace{-7pt}
+}
+
+\\newcommand{\\resumeProjectHeading}[2]{
+    \\item
+    \\begin{tabular*}{0.97\\textwidth}{l@{\\extracolsep{\\fill}}r}
+      \\small#1 & #2 \\\\
+    \\end{tabular*}\\vspace{-7pt}
+}
+
+\\newcommand{\\resumeSubItem}[1]{\\resumeItem{#1}\\vspace{-4pt}}
+
+\\renewcommand\\labelitemii{$\\vcenter{\\hbox{\\tiny$\\bullet$}}$}
+
+\\newcommand{\\resumeSubHeadingListStart}{\\begin{itemize}[leftmargin=0.15in, label={}]}
+\\newcommand{\\resumeSubHeadingListEnd}{\\end{itemize}}
+\\newcommand{\\resumeItemListStart}{\\begin{itemize}}
+\\newcommand{\\resumeItemListEnd}{\\end{itemize}\\vspace{-5pt}}
+
+%-------------------------------------------
+%%%%%%  RESUME STARTS HERE  %%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
 \\begin{document}
 
 ${generateHeader(resume.header)}
 
-${resume.sections.map(section => generateSection(section)).join('\n\n')}
+${resume.sections.map((section) => generateSection(section)).join("\n\n")}
 
 \\end{document}`;
 }
 
-function generateHeader(header: Resume['header']): string {
-  const links = header.links.map(link =>
-    `\\href{https://${link.url}}{${link.label}}`
-  ).join(' $|$ ');
+function generateHeader(header: Resume["header"]): string {
+  const links = header.links
+    .map((link) => {
+      const url = link.url.startsWith("http")
+        ? link.url
+        : `https://${link.url}`;
+      return `\\href{${url}}{\\underline{${escapeLaTeX(link.label)}}}`;
+    })
+    .join(" $|$\\n    ");
 
-  return `% Header
+  return `%----------HEADING----------
 \\begin{center}
-  {\\LARGE \\textbf{${escapeLaTeX(header.name)}}}\\\\[4pt]
-  ${escapeLaTeX(header.phone)} $|$ ${escapeLaTeX(header.email)}${links ? ' $|$ ' + links : ''}
-\\end{center}`;
+    \\textbf{\\Huge \\scshape ${escapeLaTeX(header.name)}} \\\\ \\vspace{1pt}
+    \\small ${escapeLaTeX(header.phone)} $|$ \\href{mailto:${
+    header.email
+  }}{\\underline{${escapeLaTeX(header.email)}}}${
+    links ? ` $|$\n    ${links}` : ""
+  }
+\\end{center}
+`;
 }
 
 function generateSection(section: ResumeSection): string {
-  let content = `\\section*{${escapeLaTeX(section.title)}}`;
+  let content = `%-----------${section.title.toUpperCase()}-----------
+\\section{${escapeLaTeX(section.title)}}`;
 
   switch (section.type) {
-    case 'experience':
-      content += '\n' + section.entries.map(e => generateExperience(e as ExperienceEntry)).join('\n\n');
+    case "experience":
+      content += `
+  \\resumeSubHeadingListStart
+${section.entries
+  .map((e) => generateExperience(e as ExperienceEntry))
+  .join("\n")}
+  \\resumeSubHeadingListEnd`;
       break;
-    case 'education':
-      content += '\n' + section.entries.map(e => generateEducation(e as EducationEntry)).join('\n\n');
+    case "education":
+      content += `
+  \\resumeSubHeadingListStart
+${section.entries.map((e) => generateEducation(e as EducationEntry)).join("\n")}
+  \\resumeSubHeadingListEnd`;
       break;
-    case 'projects':
-      content += '\n' + section.entries.map(e => generateProject(e as ProjectEntry)).join('\n\n');
+    case "projects":
+      content += `
+    \\resumeSubHeadingListStart
+${section.entries.map((e) => generateProject(e as ProjectEntry)).join("\n")}
+    \\resumeSubHeadingListEnd`;
       break;
-    case 'skills':
-      content += '\n' + section.entries.map(e => generateSkills(e as SkillsEntry)).join('\n\n');
+    case "skills":
+      content += `
+ \\begin{itemize}[leftmargin=0.15in, label={}]
+    \\small{\\item{
+${section.entries.map((e) => generateSkills(e as SkillsEntry)).join(" \\\\\n")}
+    }}
+ \\end{itemize}`;
       break;
-    case 'custom':
-      content += '\n' + section.entries.map(e => generateCustom(e as CustomEntry)).join('\n\n');
+    case "custom":
+      content += `
+  \\resumeSubHeadingListStart
+${section.entries.map((e) => generateCustom(e as CustomEntry)).join("\n")}
+  \\resumeSubHeadingListEnd`;
       break;
   }
 
@@ -75,64 +175,179 @@ function generateSection(section: ResumeSection): string {
 
 function generateExperience(entry: ExperienceEntry): string {
   const dateRange = formatDateRange(entry.startDate, entry.endDate);
+  const hasBullets =
+    entry.bullets.length > 0 && entry.bullets.some((b) => b.trim());
 
-  return `\\noindent
-\\textbf{${escapeLaTeX(entry.company)}} \\hfill ${escapeLaTeX(entry.location)}\\\\
-\\textit{${escapeLaTeX(entry.role)}} \\hfill ${dateRange}
-${entry.bullets.length > 0 ? `\\begin{itemize}
-${entry.bullets.map(b => `  \\item ${escapeLaTeX(b)}`).join('\n')}
-\\end{itemize}` : ''}`;
+  return `
+    \\resumeSubheading
+      {${escapeLaTeX(entry.company)}}{${escapeLaTeX(entry.location)}}
+      {${escapeLaTeX(entry.role)}}{${dateRange}}${
+    hasBullets
+      ? `
+      \\resumeItemListStart
+${entry.bullets
+  .filter((b) => b.trim())
+  .map((b) => `        \\resumeItem{${escapeLaTeX(b)}}`)
+  .join("\n")}
+      \\resumeItemListEnd`
+      : ""
+  }`;
 }
 
 function generateEducation(entry: EducationEntry): string {
   const dateRange = formatDateRange(entry.startDate, entry.endDate);
+  const hasDetails =
+    entry.details.length > 0 && entry.details.some((d) => d.trim());
 
-  return `\\noindent
-\\textbf{${escapeLaTeX(entry.institution)}} \\hfill ${escapeLaTeX(entry.location)}\\\\
-${escapeLaTeX(entry.degree)} \\hfill ${dateRange}
-${entry.details.length > 0 ? `\\begin{itemize}
-${entry.details.map(d => `  \\item ${escapeLaTeX(d)}`).join('\n')}
-\\end{itemize}` : ''}`;
+  return `
+    \\resumeSubheading
+      {${escapeLaTeX(entry.institution)}}{${escapeLaTeX(entry.location)}}
+      {${escapeLaTeX(entry.degree)}}{${dateRange}}${
+    hasDetails
+      ? `
+      \\resumeItemListStart
+${entry.details
+  .filter((d) => d.trim())
+  .map((d) => `        \\resumeItem{${escapeLaTeX(d)}}`)
+  .join("\n")}
+      \\resumeItemListEnd`
+      : ""
+  }`;
 }
 
 function generateProject(entry: ProjectEntry): string {
-  const dateRange = entry.startDate && entry.endDate
-    ? formatDateRange(entry.startDate, entry.endDate)
-    : '';
+  const dateRange =
+    entry.startDate && entry.endDate
+      ? formatDateRange(entry.startDate, entry.endDate)
+      : "";
+  const hasBullets =
+    entry.bullets.length > 0 && entry.bullets.some((b) => b.trim());
 
-  return `\\noindent
-\\textbf{${escapeLaTeX(entry.name)}} ${entry.technologies ? `-- \\textit{${escapeLaTeX(entry.technologies)}}` : ''} ${dateRange ? `\\hfill ${dateRange}` : ''}
-${entry.bullets.length > 0 ? `\\begin{itemize}
-${entry.bullets.map(b => `  \\item ${escapeLaTeX(b)}`).join('\n')}
-\\end{itemize}` : ''}`;
+  const projectTitle = entry.technologies
+    ? `\\textbf{${escapeLaTeX(entry.name)}} $|$ \\emph{${escapeLaTeX(
+        entry.technologies
+      )}}`
+    : `\\textbf{${escapeLaTeX(entry.name)}}`;
+
+  return `
+      \\resumeProjectHeading
+          {${projectTitle}}{${dateRange}}${
+    hasBullets
+      ? `
+          \\resumeItemListStart
+${entry.bullets
+  .filter((b) => b.trim())
+  .map((b) => `            \\resumeItem{${escapeLaTeX(b)}}`)
+  .join("\n")}
+          \\resumeItemListEnd`
+      : ""
+  }`;
 }
 
 function generateSkills(entry: SkillsEntry): string {
-  return `\\noindent
-\\textbf{${escapeLaTeX(entry.category)}:} ${entry.skills.map(s => escapeLaTeX(s)).join(', ')}`;
+  return `     \\textbf{${escapeLaTeX(entry.category)}}{: ${entry.skills
+    .map((s) => escapeLaTeX(s))
+    .join(", ")}}`;
 }
 
 function generateCustom(entry: CustomEntry): string {
-  const dateRange = entry.startDate && entry.endDate
-    ? formatDateRange(entry.startDate, entry.endDate)
-    : '';
+  // Handle single date (for certifications/awards with just one date)
+  const singleDate =
+    entry.startDate && !entry.endDate ? formatSingleDate(entry.startDate) : "";
+  const dateRange =
+    entry.startDate && entry.endDate
+      ? formatDateRange(entry.startDate, entry.endDate)
+      : "";
+  const displayDate = dateRange || singleDate;
+  const hasBullets =
+    entry.bullets.length > 0 && entry.bullets.some((b) => b.trim());
 
-  return `\\noindent
-\\textbf{${escapeLaTeX(entry.title)}}${entry.subtitle ? ` -- \\textit{${escapeLaTeX(entry.subtitle)}}` : ''} ${entry.location ? `\\hfill ${escapeLaTeX(entry.location)}` : ''}${dateRange ? `\\\\${dateRange}` : ''}
-${entry.bullets.length > 0 ? `\\begin{itemize}
-${entry.bullets.map(b => `  \\item ${escapeLaTeX(b)}`).join('\n')}
-\\end{itemize}` : ''}`;
+  // For simple entries (awards, certifications without bullets)
+  if (!hasBullets) {
+    const subtitle = entry.subtitle || "";
+    const location = entry.location || displayDate || "";
+
+    return `
+    \\resumeSubheading
+      {${escapeLaTeX(entry.title)}}{${location}}
+      {${subtitle}}{}`;
+  }
+
+  // For entries with bullets
+  const location = entry.location || displayDate || "";
+  const subtitle = entry.subtitle || "";
+
+  return `
+    \\resumeSubheading
+      {${escapeLaTeX(entry.title)}}{${location}}
+      {${subtitle}}{}
+      \\resumeItemListStart
+${entry.bullets
+  .filter((b) => b.trim())
+  .map((b) => `        \\resumeItem{${escapeLaTeX(b)}}`)
+  .join("\n")}
+      \\resumeItemListEnd`;
+}
+
+function formatSingleDate(date: string): string {
+  if (!date) return "";
+
+  // Check if it's already formatted (contains letters)
+  if (/[a-zA-Z]/.test(date)) return date;
+
+  // Parse YYYY-MM or YYYY format
+  if (date.includes("-")) {
+    const [year, month] = date.split("-");
+    const monthNames = [
+      "Jan.",
+      "Feb.",
+      "Mar.",
+      "Apr.",
+      "May",
+      "June",
+      "July",
+      "Aug.",
+      "Sep.",
+      "Oct.",
+      "Nov.",
+      "Dec.",
+    ];
+    return `${monthNames[parseInt(month) - 1]} ${year}`;
+  }
+
+  return date; // Return as-is if just year
 }
 
 function formatDateRange(start: string, end: string): string {
   const formatDate = (date: string) => {
-    if (!date) return '';
-    if (date.toLowerCase() === 'present') return 'Present';
+    if (!date) return "";
+    if (date.toLowerCase() === "present") return "Present";
+
+    // If already formatted, return as-is
+    if (/[a-zA-Z]/.test(date)) return date;
 
     // Parse YYYY-MM format
-    const [year, month] = date.split('-');
-    const monthNames = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
-    return `${monthNames[parseInt(month) - 1]} ${year}`;
+    const parts = date.split("-");
+    if (parts.length === 2) {
+      const [year, month] = parts;
+      const monthNames = [
+        "Jan.",
+        "Feb.",
+        "Mar.",
+        "Apr.",
+        "May",
+        "June",
+        "July",
+        "Aug.",
+        "Sep.",
+        "Oct.",
+        "Nov.",
+        "Dec.",
+      ];
+      return `${monthNames[parseInt(month) - 1]} ${year}`;
+    }
+
+    return date; // Return year only
   };
 
   return `${formatDate(start)} -- ${formatDate(end)}`;
@@ -140,8 +355,8 @@ function formatDateRange(start: string, end: string): string {
 
 function escapeLaTeX(text: string): string {
   return text
-    .replace(/\\/g, '\\textbackslash{}')
-    .replace(/[&%$#_{}]/g, '\\$&')
-    .replace(/~/g, '\\textasciitilde{}')
-    .replace(/\^/g, '\\textasciicircum{}');
+    .replace(/\\/g, "\\textbackslash{}")
+    .replace(/[&%$#_{}]/g, "\\$&")
+    .replace(/~/g, "\\textasciitilde{}")
+    .replace(/\^/g, "\\textasciicircum{}");
 }

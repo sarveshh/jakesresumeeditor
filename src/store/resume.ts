@@ -11,26 +11,38 @@ import {
     Resume,
     ResumeSection,
     SkillsEntry,
-    createDefaultResume
-} from '@/lib/resume-model';
-import { create } from 'zustand';
-import { persist } from 'zustand/middleware';
+    createDefaultResume,
+} from "@/lib/resume-model";
+import { create } from "zustand";
+import { persist } from "zustand/middleware";
 
-type ResumeEntry = ExperienceEntry | EducationEntry | ProjectEntry | SkillsEntry | CustomEntry;
+type ResumeEntry =
+  | ExperienceEntry
+  | EducationEntry
+  | ProjectEntry
+  | SkillsEntry
+  | CustomEntry;
 
 interface ResumeStore {
   resume: Resume;
   setResume: (resume: Resume) => void;
-  updateHeader: (header: Partial<Resume['header']>) => void;
+  updateHeader: (header: Partial<Resume["header"]>) => void;
   addSection: (section: ResumeSection) => void;
   updateSection: (sectionId: string, updates: Partial<ResumeSection>) => void;
   removeSection: (sectionId: string) => void;
   reorderSections: (sections: ResumeSection[]) => void;
   addEntry: (sectionId: string, entry: ResumeEntry) => void;
-  updateEntry: (sectionId: string, entryId: string, updates: Partial<ResumeEntry>) => void;
+  updateEntry: (
+    sectionId: string,
+    entryId: string,
+    updates: Partial<ResumeEntry>
+  ) => void;
   removeEntry: (sectionId: string, entryId: string) => void;
   reset: () => void;
 }
+
+// Storage version to invalidate old cached data
+const STORAGE_VERSION = 2;
 
 export const useResumeStore = create<ResumeStore>()(
   persist(
@@ -125,7 +137,16 @@ export const useResumeStore = create<ResumeStore>()(
       reset: () => set({ resume: createDefaultResume() }),
     }),
     {
-      name: 'jake-resume-storage',
+      name: "jake-resume-storage",
+      version: STORAGE_VERSION,
+      // Migrate or clear old data when version changes
+      migrate: (persistedState: unknown, version: number) => {
+        if (version < STORAGE_VERSION) {
+          // Clear old data and return default
+          return { resume: createDefaultResume() };
+        }
+        return persistedState as ResumeStore;
+      },
     }
   )
 );

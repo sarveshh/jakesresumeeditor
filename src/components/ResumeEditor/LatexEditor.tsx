@@ -1,13 +1,13 @@
-'use client';
+"use client";
 
-import { generateLatex } from '@/lib/latex/template-jake/generator';
-import { useResumeStore } from '@/store/resume';
-import { useMemo, useState } from 'react';
+import { generateLatex } from "@/lib/latex/template-jake/generator";
+import { useResumeStore } from "@/store/resume";
+import { useMemo, useState } from "react";
 
 export default function LatexEditor() {
   const { resume } = useResumeStore();
   const latexSource = useMemo(() => generateLatex(resume), [resume]);
-  const [editedSource, setEditedSource] = useState('');
+  const [editedSource, setEditedSource] = useState("");
   const [isEditing, setIsEditing] = useState(false);
 
   const displaySource = isEditing ? editedSource : latexSource;

@@ -1,12 +1,13 @@
-'use client';
+"use client";
 
-import { Button } from '@/components/ui/button';
-import { Card } from '@/components/ui/card';
-import { compileLatex } from '@/lib/latex/compiler';
-import { generateLatex } from '@/lib/latex/template-jake/generator';
-import { useResumeStore } from '@/store/resume';
-import { AlertCircle, Download, RefreshCw } from 'lucide-react';
-import { useEffect, useState } from 'react';
+import { Button } from "@/components/ui/button";
+import { Card } from "@/components/ui/card";
+import { compileLatex } from "@/lib/latex/compiler";
+import { generateLatex } from "@/lib/latex/template-jake/generator";
+import { useResumeStore } from "@/store/resume";
+import { AlertCircle, RefreshCw } from "lucide-react";
+import { useEffect, useState } from "react";
+import DownloadDialog from "./DownloadDialog";
 
 export default function Preview() {
   const { resume } = useResumeStore();
@@ -43,21 +44,12 @@ export default function Preview() {
         setPdfUrl(url);
         setLastCompileTime(Date.now() - startTime);
       } else {
-        setError(result.error || 'Compilation failed');
+        setError(result.error || "Compilation failed");
       }
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Unknown error');
+      setError(err instanceof Error ? err.message : "Unknown error");
     } finally {
       setIsCompiling(false);
-    }
-  };
-
-  const handleDownload = () => {
-    if (pdfUrl) {
-      const link = document.createElement('a');
-      link.href = pdfUrl;
-      link.download = `${resume.header.name.replace(/\s+/g, '_')}_Resume.pdf`;
-      link.click();
     }
   };
 
@@ -79,18 +71,12 @@ export default function Preview() {
             onClick={handleCompile}
             disabled={isCompiling}
           >
-            <RefreshCw className={`h-4 w-4 mr-2 ${isCompiling ? 'animate-spin' : ''}`} />
-            {isCompiling ? 'Compiling...' : 'Refresh'}
+            <RefreshCw
+              className={`h-4 w-4 mr-2 ${isCompiling ? "animate-spin" : ""}`}
+            />
+            {isCompiling ? "Compiling..." : "Refresh"}
           </Button>
-          <Button
-            variant="default"
-            size="sm"
-            onClick={handleDownload}
-            disabled={!pdfUrl}
-          >
-            <Download className="h-4 w-4 mr-2" />
-            Download
-          </Button>
+          <DownloadDialog pdfUrl={pdfUrl} disabled={!pdfUrl} />
         </div>
       </div>
 
@@ -100,7 +86,9 @@ export default function Preview() {
             <div className="flex items-start gap-2">
               <AlertCircle className="h-5 w-5 text-destructive mt-0.5" />
               <div>
-                <h3 className="font-semibold text-destructive">Compilation Error</h3>
+                <h3 className="font-semibold text-destructive">
+                  Compilation Error
+                </h3>
                 <pre className="text-sm mt-2 whitespace-pre-wrap">{error}</pre>
               </div>
             </div>

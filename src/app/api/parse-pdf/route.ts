@@ -1,57 +1,65 @@
 /**
- * API Route: Parse PDF to Text
- * Extracts text from uploaded PDF files
+ * API Route: Parse PDF to Text and Structure
+ * Extracts structured data from uploaded PDF files
  */
 
-import { NextRequest, NextResponse } from 'next/server';
+import { NextRequest, NextResponse } from "next/server";
+import PDFParser from "pdf2json";
 
 export async function POST(request: NextRequest) {
   try {
     const formData = await request.formData();
-    const pdfFile = formData.get('pdf') as File;
+    const pdfFile = formData.get("pdf") as File;
 
     if (!pdfFile) {
       return NextResponse.json(
-        { message: 'PDF file is required' },
+        { message: "PDF file is required" },
         { status: 400 }
       );
     }
 
-    // TODO: Implement PDF parsing with pdf-parse
-    // For now, return a placeholder
-    // In production:
-    // 1. Read the PDF buffer
-    // 2. Use pdf-parse to extract text
-    // 3. Return structured text
-
-    return NextResponse.json(
-      {
-        message: 'PDF parsing not yet implemented',
-        text: 'Placeholder text from PDF',
-      },
-      { status: 501 }
-    );
-
-    /*
-    // Example implementation with pdf-parse:
-    const pdfParse = require('pdf-parse');
-
+    // Read PDF file
     const arrayBuffer = await pdfFile.arrayBuffer();
     const buffer = Buffer.from(arrayBuffer);
 
-    const data = await pdfParse(buffer);
+    // Create parser instance
+    const pdfParser = new PDFParser();
+
+    // Parse PDF and extract both text and structure
+    const result = await new Promise<{ text: string; data: unknown }>(
+      (resolve, reject) => {
+        pdfParser.on(
+          "pdfParser_dataError",
+          (errData: Error | { parserError: Error }) => {
+            const error =
+              errData instanceof Error ? errData : errData.parserError;
+            reject(error);
+          }
+        );
+
+        pdfParser.on("pdfParser_dataReady", (pdfData) => {
+          // Extract plain text
+          const text = pdfParser.getRawTextContent();
+
+          // Also get structured data for better parsing
+          resolve({ text, data: pdfData });
+        });
+
+        // Parse the buffer
+        pdfParser.parseBuffer(buffer);
+      }
+    );
 
     return NextResponse.json({
-      text: data.text,
-      pages: data.numpages,
-      info: data.info,
+      text: result.text,
+      data: result.data, // Include structured PDF data for better parsing
+      pages: 1,
     });
-    */
   } catch (error) {
-    console.error('PDF parsing error:', error);
+    console.error("PDF parsing error:", error);
     return NextResponse.json(
       {
-        message: error instanceof Error ? error.message : 'Parsing failed',
+        message: error instanceof Error ? error.message : "Parsing failed",
       },
       { status: 500 }
     );

@@ -1,20 +1,22 @@
-'use client';
+"use client";
 
-import { Button } from '@/components/ui/button';
-import { Card } from '@/components/ui/card';
-import { Input } from '@/components/ui/input';
-import { Label } from '@/components/ui/label';
-import { Textarea } from '@/components/ui/textarea';
+import { Button } from "@/components/ui/button";
+import { Card } from "@/components/ui/card";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { Textarea } from "@/components/ui/textarea";
 import {
-    EducationEntry,
-    ExperienceEntry,
-    ProjectEntry,
-    ResumeSection,
-    SkillsEntry
-} from '@/lib/resume-model';
-import { useResumeStore } from '@/store/resume';
-import { GripVertical, Plus, Trash2 } from 'lucide-react';
-import { useState } from 'react';
+  CustomEntry,
+  EducationEntry,
+  ExperienceEntry,
+  ProjectEntry,
+  ResumeSection,
+  SkillsEntry,
+} from "@/lib/resume-model";
+import { useResumeStore } from "@/store/resume";
+import { Plus, Trash2 } from "lucide-react";
+import { useState } from "react";
+import DraggableSections, { SortableSection } from "./DraggableSections";
 
 export default function FormEditor() {
   const { resume, updateHeader, addSection } = useResumeStore();
@@ -81,7 +83,9 @@ export default function FormEditor() {
                   variant="ghost"
                   size="icon"
                   onClick={() => {
-                    const newLinks = resume.header.links.filter((_, i) => i !== idx);
+                    const newLinks = resume.header.links.filter(
+                      (_, i) => i !== idx
+                    );
                     updateHeader({ links: newLinks });
                   }}
                 >
@@ -95,7 +99,7 @@ export default function FormEditor() {
               className="mt-2"
               onClick={() => {
                 updateHeader({
-                  links: [...resume.header.links, { label: '', url: '' }],
+                  links: [...resume.header.links, { label: "", url: "" }],
                 });
               }}
             >
@@ -106,9 +110,11 @@ export default function FormEditor() {
       </Card>
 
       {/* Sections */}
-      {resume.sections.map((section) => (
-        <SectionEditor key={section.id} section={section} />
-      ))}
+      <DraggableSections>
+        {resume.sections.map((section) => (
+          <SectionEditor key={section.id} section={section} />
+        ))}
+      </DraggableSections>
 
       <Button
         variant="outline"
@@ -116,8 +122,8 @@ export default function FormEditor() {
         onClick={() => {
           const newSection = {
             id: `section-${Date.now()}`,
-            type: 'experience' as const,
-            title: 'New Section',
+            type: "experience" as const,
+            title: "New Section",
             entries: [],
           };
           addSection(newSection);
@@ -134,66 +140,65 @@ function SectionEditor({ section }: { section: ResumeSection }) {
   const [isExpanded, setIsExpanded] = useState(true);
 
   return (
-    <Card className="p-6">
-      <div className="flex items-center justify-between mb-4">
-        <div className="flex items-center gap-2">
-          <GripVertical className="h-5 w-5 text-gray-400 cursor-move" />
-          <Input
-            value={section.title}
-            onChange={(e) => updateSection(section.id, { title: e.target.value })}
-            className="font-bold text-lg border-none p-0 h-auto"
-          />
-        </div>
-        <div className="flex gap-2">
-          <Button
-            variant="ghost"
-            size="sm"
-            onClick={() => setIsExpanded(!isExpanded)}
-          >
-            {isExpanded ? 'Collapse' : 'Expand'}
-          </Button>
-          <Button
-            variant="ghost"
-            size="icon"
-            onClick={() => removeSection(section.id)}
-          >
-            <Trash2 className="h-4 w-4" />
-          </Button>
-        </div>
-      </div>
-
-      {isExpanded && (
-        <div className="space-y-4">
-          {section.type === 'experience' && (
-            <ExperienceEntries sectionId={section.id} entries={section.entries as ExperienceEntry[]} />
-          )}
-          {section.type === 'education' && (
-            <EducationEntries sectionId={section.id} entries={section.entries as EducationEntry[]} />
-          )}
-          {section.type === 'projects' && (
-            <ProjectEntries sectionId={section.id} entries={section.entries as ProjectEntry[]} />
-          )}
-          {section.type === 'skills' && (
-            <SkillsEntries sectionId={section.id} entries={section.entries as SkillsEntry[]} />
-          )}
-
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={() => {
-              const newEntry = createNewEntry(section.type);
-              addEntry(section.id, newEntry);
-            }}
-          >
-            <Plus className="h-4 w-4 mr-2" /> Add Entry
-          </Button>
-        </div>
+    <SortableSection
+      section={section}
+      isExpanded={isExpanded}
+      onToggleExpand={() => setIsExpanded(!isExpanded)}
+      onRemove={() => removeSection(section.id)}
+      onUpdateTitle={(title) => updateSection(section.id, { title })}
+    >
+      {section.type === "experience" && (
+        <ExperienceEntries
+          sectionId={section.id}
+          entries={section.entries as ExperienceEntry[]}
+        />
       )}
-    </Card>
+      {section.type === "education" && (
+        <EducationEntries
+          sectionId={section.id}
+          entries={section.entries as EducationEntry[]}
+        />
+      )}
+      {section.type === "projects" && (
+        <ProjectEntries
+          sectionId={section.id}
+          entries={section.entries as ProjectEntry[]}
+        />
+      )}
+      {section.type === "skills" && (
+        <SkillsEntries
+          sectionId={section.id}
+          entries={section.entries as SkillsEntry[]}
+        />
+      )}
+      {section.type === "custom" && (
+        <CustomEntries
+          sectionId={section.id}
+          entries={section.entries as CustomEntry[]}
+        />
+      )}
+
+      <Button
+        variant="outline"
+        size="sm"
+        onClick={() => {
+          const newEntry = createNewEntry(section.type);
+          addEntry(section.id, newEntry);
+        }}
+      >
+        <Plus className="h-4 w-4 mr-2" /> Add Entry
+      </Button>
+    </SortableSection>
   );
 }
 
-function ExperienceEntries({ sectionId, entries }: { sectionId: string; entries: ExperienceEntry[] }) {
+function ExperienceEntries({
+  sectionId,
+  entries,
+}: {
+  sectionId: string;
+  entries: ExperienceEntry[];
+}) {
   const { updateEntry, removeEntry } = useResumeStore();
 
   return (
@@ -205,14 +210,18 @@ function ExperienceEntries({ sectionId, entries }: { sectionId: string; entries:
               <Label>Company</Label>
               <Input
                 value={entry.company}
-                onChange={(e) => updateEntry(sectionId, entry.id, { company: e.target.value })}
+                onChange={(e) =>
+                  updateEntry(sectionId, entry.id, { company: e.target.value })
+                }
               />
             </div>
             <div>
               <Label>Role</Label>
               <Input
                 value={entry.role}
-                onChange={(e) => updateEntry(sectionId, entry.id, { role: e.target.value })}
+                onChange={(e) =>
+                  updateEntry(sectionId, entry.id, { role: e.target.value })
+                }
               />
             </div>
           </div>
@@ -221,7 +230,9 @@ function ExperienceEntries({ sectionId, entries }: { sectionId: string; entries:
               <Label>Location</Label>
               <Input
                 value={entry.location}
-                onChange={(e) => updateEntry(sectionId, entry.id, { location: e.target.value })}
+                onChange={(e) =>
+                  updateEntry(sectionId, entry.id, { location: e.target.value })
+                }
               />
             </div>
             <div>
@@ -229,14 +240,20 @@ function ExperienceEntries({ sectionId, entries }: { sectionId: string; entries:
               <Input
                 type="month"
                 value={entry.startDate}
-                onChange={(e) => updateEntry(sectionId, entry.id, { startDate: e.target.value })}
+                onChange={(e) =>
+                  updateEntry(sectionId, entry.id, {
+                    startDate: e.target.value,
+                  })
+                }
               />
             </div>
             <div>
               <Label>End Date</Label>
               <Input
                 value={entry.endDate}
-                onChange={(e) => updateEntry(sectionId, entry.id, { endDate: e.target.value })}
+                onChange={(e) =>
+                  updateEntry(sectionId, entry.id, { endDate: e.target.value })
+                }
                 placeholder="Present"
               />
             </div>
@@ -258,7 +275,9 @@ function ExperienceEntries({ sectionId, entries }: { sectionId: string; entries:
                   variant="ghost"
                   size="icon"
                   onClick={() => {
-                    const newBullets = entry.bullets.filter((_: any, i: number) => i !== idx);
+                    const newBullets = entry.bullets.filter(
+                      (_: any, i: number) => i !== idx
+                    );
                     updateEntry(sectionId, entry.id, { bullets: newBullets });
                   }}
                 >
@@ -271,7 +290,9 @@ function ExperienceEntries({ sectionId, entries }: { sectionId: string; entries:
               size="sm"
               className="mt-2"
               onClick={() => {
-                updateEntry(sectionId, entry.id, { bullets: [...entry.bullets, ''] });
+                updateEntry(sectionId, entry.id, {
+                  bullets: [...entry.bullets, ""],
+                });
               }}
             >
               <Plus className="h-4 w-4 mr-2" /> Add Bullet
@@ -290,7 +311,13 @@ function ExperienceEntries({ sectionId, entries }: { sectionId: string; entries:
   );
 }
 
-function EducationEntries({ sectionId, entries }: { sectionId: string; entries: EducationEntry[] }) {
+function EducationEntries({
+  sectionId,
+  entries,
+}: {
+  sectionId: string;
+  entries: EducationEntry[];
+}) {
   const { updateEntry, removeEntry } = useResumeStore();
 
   return (
@@ -302,14 +329,20 @@ function EducationEntries({ sectionId, entries }: { sectionId: string; entries: 
               <Label>Institution</Label>
               <Input
                 value={entry.institution}
-                onChange={(e) => updateEntry(sectionId, entry.id, { institution: e.target.value })}
+                onChange={(e) =>
+                  updateEntry(sectionId, entry.id, {
+                    institution: e.target.value,
+                  })
+                }
               />
             </div>
             <div>
               <Label>Degree</Label>
               <Input
                 value={entry.degree}
-                onChange={(e) => updateEntry(sectionId, entry.id, { degree: e.target.value })}
+                onChange={(e) =>
+                  updateEntry(sectionId, entry.id, { degree: e.target.value })
+                }
               />
             </div>
           </div>
@@ -318,7 +351,9 @@ function EducationEntries({ sectionId, entries }: { sectionId: string; entries: 
               <Label>Location</Label>
               <Input
                 value={entry.location}
-                onChange={(e) => updateEntry(sectionId, entry.id, { location: e.target.value })}
+                onChange={(e) =>
+                  updateEntry(sectionId, entry.id, { location: e.target.value })
+                }
               />
             </div>
             <div>
@@ -326,7 +361,11 @@ function EducationEntries({ sectionId, entries }: { sectionId: string; entries: 
               <Input
                 type="month"
                 value={entry.startDate}
-                onChange={(e) => updateEntry(sectionId, entry.id, { startDate: e.target.value })}
+                onChange={(e) =>
+                  updateEntry(sectionId, entry.id, {
+                    startDate: e.target.value,
+                  })
+                }
               />
             </div>
             <div>
@@ -334,7 +373,9 @@ function EducationEntries({ sectionId, entries }: { sectionId: string; entries: 
               <Input
                 type="month"
                 value={entry.endDate}
-                onChange={(e) => updateEntry(sectionId, entry.id, { endDate: e.target.value })}
+                onChange={(e) =>
+                  updateEntry(sectionId, entry.id, { endDate: e.target.value })
+                }
               />
             </div>
           </div>
@@ -351,7 +392,13 @@ function EducationEntries({ sectionId, entries }: { sectionId: string; entries: 
   );
 }
 
-function ProjectEntries({ sectionId, entries }: { sectionId: string; entries: ProjectEntry[] }) {
+function ProjectEntries({
+  sectionId,
+  entries,
+}: {
+  sectionId: string;
+  entries: ProjectEntry[];
+}) {
   const { updateEntry, removeEntry } = useResumeStore();
 
   return (
@@ -363,14 +410,20 @@ function ProjectEntries({ sectionId, entries }: { sectionId: string; entries: Pr
               <Label>Project Name</Label>
               <Input
                 value={entry.name}
-                onChange={(e) => updateEntry(sectionId, entry.id, { name: e.target.value })}
+                onChange={(e) =>
+                  updateEntry(sectionId, entry.id, { name: e.target.value })
+                }
               />
             </div>
             <div>
               <Label>Technologies</Label>
               <Input
                 value={entry.technologies}
-                onChange={(e) => updateEntry(sectionId, entry.id, { technologies: e.target.value })}
+                onChange={(e) =>
+                  updateEntry(sectionId, entry.id, {
+                    technologies: e.target.value,
+                  })
+                }
               />
             </div>
           </div>
@@ -391,7 +444,9 @@ function ProjectEntries({ sectionId, entries }: { sectionId: string; entries: Pr
                   variant="ghost"
                   size="icon"
                   onClick={() => {
-                    const newBullets = entry.bullets.filter((_: any, i: number) => i !== idx);
+                    const newBullets = entry.bullets.filter(
+                      (_: any, i: number) => i !== idx
+                    );
                     updateEntry(sectionId, entry.id, { bullets: newBullets });
                   }}
                 >
@@ -404,7 +459,9 @@ function ProjectEntries({ sectionId, entries }: { sectionId: string; entries: Pr
               size="sm"
               className="mt-2"
               onClick={() => {
-                updateEntry(sectionId, entry.id, { bullets: [...entry.bullets, ''] });
+                updateEntry(sectionId, entry.id, {
+                  bullets: [...entry.bullets, ""],
+                });
               }}
             >
               <Plus className="h-4 w-4 mr-2" /> Add Bullet
@@ -423,7 +480,13 @@ function ProjectEntries({ sectionId, entries }: { sectionId: string; entries: Pr
   );
 }
 
-function SkillsEntries({ sectionId, entries }: { sectionId: string; entries: SkillsEntry[] }) {
+function SkillsEntries({
+  sectionId,
+  entries,
+}: {
+  sectionId: string;
+  entries: SkillsEntry[];
+}) {
   const { updateEntry, removeEntry } = useResumeStore();
 
   return (
@@ -434,15 +497,20 @@ function SkillsEntries({ sectionId, entries }: { sectionId: string; entries: Ski
             <Label>Category</Label>
             <Input
               value={entry.category}
-              onChange={(e) => updateEntry(sectionId, entry.id, { category: e.target.value })}
+              onChange={(e) =>
+                updateEntry(sectionId, entry.id, { category: e.target.value })
+              }
             />
           </div>
           <div>
             <Label>Skills (comma-separated)</Label>
             <Input
-              value={entry.skills.join(', ')}
+              value={entry.skills.join(", ")}
               onChange={(e) => {
-                const skills = e.target.value.split(',').map(s => s.trim()).filter(Boolean);
+                const skills = e.target.value
+                  .split(",")
+                  .map((s) => s.trim())
+                  .filter(Boolean);
                 updateEntry(sectionId, entry.id, { skills });
               }}
             />
@@ -460,48 +528,158 @@ function SkillsEntries({ sectionId, entries }: { sectionId: string; entries: Ski
   );
 }
 
+function CustomEntries({
+  sectionId,
+  entries,
+}: {
+  sectionId: string;
+  entries: CustomEntry[];
+}) {
+  const { updateEntry, removeEntry } = useResumeStore();
+
+  return (
+    <>
+      {entries.map((entry) => (
+        <div key={entry.id} className="border rounded-lg p-4 space-y-3">
+          <div>
+            <Label>Title</Label>
+            <Input
+              value={entry.title}
+              onChange={(e) =>
+                updateEntry(sectionId, entry.id, { title: e.target.value })
+              }
+              placeholder="Award name or certification title"
+            />
+          </div>
+          <div>
+            <Label>Subtitle (optional)</Label>
+            <Input
+              value={entry.subtitle || ""}
+              onChange={(e) =>
+                updateEntry(sectionId, entry.id, { subtitle: e.target.value })
+              }
+              placeholder="Organization or issuer"
+            />
+          </div>
+          <div className="grid grid-cols-2 gap-4">
+            <div>
+              <Label>Location (optional)</Label>
+              <Input
+                value={entry.location || ""}
+                onChange={(e) =>
+                  updateEntry(sectionId, entry.id, { location: e.target.value })
+                }
+                placeholder="City or remote"
+              />
+            </div>
+            <div>
+              <Label>Date (optional)</Label>
+              <Input
+                value={entry.startDate || ""}
+                onChange={(e) =>
+                  updateEntry(sectionId, entry.id, {
+                    startDate: e.target.value,
+                  })
+                }
+                placeholder="Jun 2020 or 2020"
+              />
+            </div>
+          </div>
+          <div>
+            <Label>Details (optional bullets)</Label>
+            {entry.bullets.map((bullet, idx) => (
+              <div key={idx} className="flex gap-2 mb-2">
+                <Input
+                  value={bullet}
+                  onChange={(e) => {
+                    const newBullets = [...entry.bullets];
+                    newBullets[idx] = e.target.value;
+                    updateEntry(sectionId, entry.id, { bullets: newBullets });
+                  }}
+                  placeholder="Additional detail (leave empty if not needed)"
+                />
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  onClick={() => {
+                    const newBullets = entry.bullets.filter(
+                      (_: string, i: number) => i !== idx
+                    );
+                    updateEntry(sectionId, entry.id, { bullets: newBullets });
+                  }}
+                >
+                  <Trash2 className="h-4 w-4" />
+                </Button>
+              </div>
+            ))}
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => {
+                updateEntry(sectionId, entry.id, {
+                  bullets: [...entry.bullets, ""],
+                });
+              }}
+            >
+              <Plus className="h-4 w-4 mr-2" /> Add Detail
+            </Button>
+          </div>
+          <Button
+            variant="destructive"
+            size="sm"
+            onClick={() => removeEntry(sectionId, entry.id)}
+          >
+            <Trash2 className="h-4 w-4 mr-2" />
+            Remove Entry
+          </Button>
+        </div>
+      ))}
+    </>
+  );
+}
+
 function createNewEntry(type: string) {
   const id = `entry-${Date.now()}`;
 
   switch (type) {
-    case 'experience':
+    case "experience":
       return {
         id,
-        company: '',
-        role: '',
-        location: '',
-        startDate: '',
-        endDate: '',
-        bullets: [''],
+        company: "",
+        role: "",
+        location: "",
+        startDate: "",
+        endDate: "",
+        bullets: [""],
       };
-    case 'education':
+    case "education":
       return {
         id,
-        institution: '',
-        degree: '',
-        location: '',
-        startDate: '',
-        endDate: '',
+        institution: "",
+        degree: "",
+        location: "",
+        startDate: "",
+        endDate: "",
         details: [],
       };
-    case 'projects':
+    case "projects":
       return {
         id,
-        name: '',
-        technologies: '',
-        bullets: [''],
+        name: "",
+        technologies: "",
+        bullets: [""],
       };
-    case 'skills':
+    case "skills":
       return {
         id,
-        category: '',
+        category: "",
         skills: [],
       };
     default:
       return {
         id,
-        title: '',
-        bullets: [''],
+        title: "",
+        bullets: [""],
       };
   }
 }

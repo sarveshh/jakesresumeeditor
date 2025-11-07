@@ -3,7 +3,7 @@
  * Uses Tectonic for compilation (placeholder for now)
  */
 
-import { NextRequest, NextResponse } from 'next/server';
+import { NextRequest, NextResponse } from "next/server";
 
 export async function POST(request: NextRequest) {
   try {
@@ -11,7 +11,7 @@ export async function POST(request: NextRequest) {
 
     if (!latex) {
       return NextResponse.json(
-        { message: 'LaTeX source is required' },
+        { message: "LaTeX source is required" },
         { status: 400 }
       );
     }
@@ -25,8 +25,9 @@ export async function POST(request: NextRequest) {
 
     return NextResponse.json(
       {
-        message: 'PDF compilation not yet implemented. Tectonic installation required.',
-        logs: 'Install Tectonic: https://tectonic-typesetting.github.io/en-US/install.html',
+        message:
+          "PDF compilation not yet implemented. Tectonic installation required.",
+        logs: "Install Tectonic: https://tectonic-typesetting.github.io/en-US/install.html",
       },
       { status: 501 }
     );
@@ -75,11 +76,11 @@ export async function POST(request: NextRequest) {
     });
     */
   } catch (error) {
-    console.error('Compilation error:', error);
+    console.error("Compilation error:", error);
     return NextResponse.json(
       {
-        message: error instanceof Error ? error.message : 'Compilation failed',
-        logs: error instanceof Error ? error.stack : '',
+        message: error instanceof Error ? error.message : "Compilation failed",
+        logs: error instanceof Error ? error.stack : "",
       },
       { status: 500 }
     );
