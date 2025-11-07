@@ -12,6 +12,7 @@ export interface ResumeHeader {
   name: string;
   phone: string;
   email: string;
+  location?: string; // e.g., "Mumbai, India (Open to relocation)"
   links: ResumeLink[];
 }
 

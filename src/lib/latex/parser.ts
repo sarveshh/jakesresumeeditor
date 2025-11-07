@@ -81,6 +81,27 @@ export function parsePdfTextToResume(text: string): Partial<Resume> {
     }
   }
 
+  // Extract location (usually second line, contains city/country)
+  if (lines.length > 1) {
+    const secondLine = lines[1];
+    // Location usually contains city names, country, or "relocation"
+    if (
+      secondLine.length > 3 &&
+      secondLine.length < 100 &&
+      !secondLine.includes("@") &&
+      !secondLine.match(/^\+?\d/) && // Not starting with phone number
+      (secondLine.match(/,/) || // Has comma (city, country)
+        secondLine.toLowerCase().includes("relocation") ||
+        secondLine.toLowerCase().includes("india") ||
+        secondLine.toLowerCase().includes("mumbai") ||
+        secondLine.toLowerCase().includes("pune") ||
+        secondLine.toLowerCase().includes("delhi") ||
+        secondLine.toLowerCase().includes("bangalore"))
+    ) {
+      resume.header!.location = secondLine;
+    }
+  }
+
   // Extract email
   const emailRegex =
     /([a-zA-Z0-9][a-zA-Z0-9._%+-]*@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,})/g;
@@ -220,7 +241,12 @@ export function parsePdfTextToResume(text: string): Partial<Resume> {
         });
       }
     } else if (section.type === "custom-awards") {
+      console.log("🏆 AWARDS RAW TEXT:", sectionText);
       const entries = parseCustomSectionImproved(sectionText);
+      console.log(
+        "🏆 AWARDS PARSED ENTRIES:",
+        JSON.stringify(entries, null, 2)
+      );
       if (entries.length > 0) {
         sections.push({
           id: "awards",
@@ -230,7 +256,12 @@ export function parsePdfTextToResume(text: string): Partial<Resume> {
         });
       }
     } else if (section.type === "custom-certs") {
+      console.log("📜 CERTIFICATIONS RAW TEXT:", sectionText);
       const entries = parseCustomSectionImproved(sectionText);
+      console.log(
+        "📜 CERTIFICATIONS PARSED ENTRIES:",
+        JSON.stringify(entries, null, 2)
+      );
       if (entries.length > 0) {
         sections.push({
           id: "certifications",
@@ -496,118 +527,221 @@ function parseCustomSectionImproved(text: string): CustomEntry[] {
     .map((l) => l.trim())
     .filter((l) => l);
 
+  console.log("🔍 parseCustomSectionImproved - All lines:", lines);
+
   let i = 0;
   while (i < lines.length) {
     const line = lines[i];
 
-    // Skip bullets
+    // Skip lines that are clearly not entry titles
     if (line.startsWith("•")) {
+      console.log(`  ⏩ Skipping bullet line [${i}]:`, line);
       i++;
       continue;
     }
 
-    // Entry title line - look for various patterns
-    // Pattern 1: "Title | Location | Date"
-    // Pattern 2: "Title Date" (e.g., "Global Assessment...Jan 2021")
-    // Pattern 3: "Titleby Institution" (e.g., "React Specialisation...by University")
+    // Check if this line looks like an entry title (not a subtitle/credential)
+    const looksLikeTitle =
+      line.length > 15 || // Long enough to be a title
+      line.match(
+        /(Jan\.?|Feb\.?|Mar\.?|Apr\.?|May|June?\.?|July?\.?|Aug\.?|Sep\.?|Oct\.?|Nov\.?|Dec\.?)\s+\d{4}$/i
+      ) || // Has date
+      line.match(/\|/) || // Has pipe separator
+      line.match(/\d{4}\s+(Finalist|Winner|Award|Hackathon)/i); // Year followed by award-type word
 
+    // Skip short lines that don't look like titles (probably subtitles/credentials)
+    if (!looksLikeTitle && line.length < 20) {
+      console.log(`  ⏭️ Skipping non-title line [${i}]:`, line);
+      i++;
+      continue;
+    }
+
+    console.log(`\n  📌 Processing entry at line [${i}]:`, line);
+
+    // This is a potential title line
     let title = line;
     let subtitle = "";
     let location = "";
     let endDate = "";
 
-    // Check for "by" pattern (certifications)
-    const byMatch = line.match(/(.*?)\s+by\s+(.+?)(\||$)/i);
+    // First, extract date if present at the end (with or without space before month)
+    const dateMatch = title.match(
+      /(.*?)\s*(Jan\.?|Feb\.?|Mar\.?|Apr\.?|May|June?\.?|July?\.?|Aug\.?|Sep\.?|Oct\.?|Nov\.?|Dec\.?)\s*(\d{4})$/i
+    );
+    if (dateMatch) {
+      title = dateMatch[1].trim();
+      endDate = `${dateMatch[2]} ${dateMatch[3]}`;
+      console.log(
+        `    � Extracted date: "${endDate}", remaining title: "${title}"`
+      );
+    }
+
+    // Extract "by Institution" pattern (for certifications) - do this AFTER date extraction
+    const byMatch = title.match(/(.*?)\s*by\s+(.+)$/i);
     if (byMatch) {
       title = byMatch[1].trim();
       subtitle = "by " + byMatch[2].trim();
-
-      // Check for date at the end
-      const dateMatch = line.match(
-        /(Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)\s+(\d{4})$/i
+      console.log(
+        `    Extracted 'by' pattern - Title: "${title}", Subtitle: "${subtitle}"`
       );
-      if (dateMatch) {
-        endDate = `${dateMatch[1]} ${dateMatch[2]}`;
-        // Remove date from subtitle if it's there
-        subtitle = subtitle.replace(new RegExp(endDate + "$"), "").trim();
+    }
+
+    // Clean up trailing pipes from title BEFORE location extraction
+    title = title.replace(/\|+\s*$/, "").trim();
+    if (subtitle) {
+      subtitle = subtitle.replace(/\|+\s*$/, "").trim();
+    }
+
+    // Extract location and date from title line
+    // Pattern: "Title [Location |] Date" or "Title | Location | Date"
+
+    // Check for location with pipe separator
+    const locationPipeMatch = title.match(/(.*?)\s*\|\s*([^|]+)$/);
+    if (locationPipeMatch) {
+      const beforePipe = locationPipeMatch[1].trim();
+      const afterPipe = locationPipeMatch[2].trim();
+
+      // Check if what's after the pipe is actually a date
+      const isDate = afterPipe.match(
+        /^(Jan\.?|Feb\.?|Mar\.?|Apr\.?|May|June?\.?|July?\.?|Aug\.?|Sep\.?|Oct\.?|Nov\.?|Dec\.?)\s*\d{4}$/i
+      );
+
+      if (isDate && !endDate) {
+        // It's a date, not a location
+        title = beforePipe;
+        endDate = afterPipe;
+        console.log(
+          `    � Extracted date (after pipe): "${endDate}", remaining title: "${title}"`
+        );
+      } else {
+        // It's a location
+        title = beforePipe;
+        location = afterPipe; // FIX: Actually assign the location!
+        console.log(
+          `    Extracted location (pipe): "${location}", remaining title: "${title}"`
+        );
       }
     } else {
-      // Check for date at end
-      const dateMatch = line.match(
-        /(.*?)(Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)\s+(\d{4})$/i
+      // Check for location at end without pipe (e.g., "TitleDelhi")
+      const locationEndMatch = title.match(
+        /(.*?)(Mumbai|Pune|Delhi|Bangalore|Hyderabad|Chennai|Kolkata|Remote)$/i
       );
-      if (dateMatch) {
-        title = dateMatch[1].trim();
-        endDate = `${dateMatch[2]} ${dateMatch[3]}`;
-      }
-
-      // Check for location pipe pattern (e.g., "Title | Location")
-      const pipeLocationMatch = title.match(
-        /(.*?)\|\s*(Mumbai|Pune|Delhi|Bangalore|Hyderabad|Chennai|Kolkata)/i
-      );
-      if (pipeLocationMatch) {
-        title = pipeLocationMatch[1].trim();
-        location = pipeLocationMatch[2].trim();
-      } else {
-        // Check for location at end of title (e.g., "Smart India Hackathon 2020 FinalistDelhi")
-        const locationEndMatch = title.match(
-          /(.*?)(Mumbai|Pune|Delhi|Bangalore|Hyderabad|Chennai|Kolkata)$/i
+      if (locationEndMatch) {
+        title = locationEndMatch[1].trim();
+        location = locationEndMatch[2];
+        console.log(
+          `    Extracted location (end): "${location}", remaining title: "${title}"`
         );
-        if (locationEndMatch) {
-          title = locationEndMatch[1].trim();
-          location = locationEndMatch[2];
-        }
+      }
+    }
+
+    // Move to next line
+    i++;
+
+    // Check if next line is a subtitle (starts with "by" or looks like organization)
+    // Only if we didn't already extract subtitle from title
+    if (!subtitle && i < lines.length && !lines[i].startsWith("•")) {
+      const nextLine = lines[i];
+      if (nextLine.match(/^by\s+/i)) {
+        subtitle = nextLine;
+        console.log(`    📖 Found subtitle (by pattern): "${subtitle}"`);
+        i++;
+      } else if (
+        nextLine.match(/University|Institute|Organization|Credential/i) &&
+        nextLine.length < 100
+      ) {
+        subtitle = nextLine;
+        console.log(
+          `    📖 Found subtitle (organization pattern): "${subtitle}"`
+        );
+        i++;
       }
     }
 
     // Collect bullets - join multi-line bullets
     const bullets: string[] = [];
-    i++;
-
     let currentBullet = "";
+    let bulletSavedBeforeBreak = false;
+
+    console.log(`    Collecting bullets starting at line [${i}]...`);
+
     while (i < lines.length) {
-      if (lines[i].startsWith("•")) {
+      const currentLine = lines[i];
+
+      if (currentLine.startsWith("•")) {
         // Save previous bullet if exists
         if (currentBullet) {
           bullets.push(currentBullet.trim());
+          console.log(
+            `      Saved bullet: "${currentBullet.trim().substring(0, 50)}..."`
+          );
         }
         // Start new bullet
-        currentBullet = lines[i].replace(/^•\s*/, "").trim();
+        currentBullet = currentLine.replace(/^•\s*/, "").trim();
         i++;
+        bulletSavedBeforeBreak = false;
       } else if (currentBullet) {
-        // Check if this line is the start of a new entry
-        const nextIsEntry =
-          lines[i].match(
-            /(Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)\s+\d{4}$/i
+        // Check if this line starts a new entry (has date pattern or location pattern)
+        const isNewEntry =
+          currentLine.match(
+            /(Jan\.?|Feb\.?|Mar\.?|Apr\.?|May|June?\.?|July?\.?|Aug\.?|Sep\.?|Oct\.?|Nov\.?|Dec\.?)\s+\d{4}$/i
           ) ||
-          lines[i].match(/by\s+/i) ||
-          lines[i].match(
-            /(Mumbai|Pune|Delhi|Bangalore|Hyderabad|Chennai|Kolkata)$/i
-          );
+          currentLine.match(
+            /\|\s*(Mumbai|Pune|Delhi|Bangalore|Hyderabad|Chennai|Kolkata|Remote)/i
+          ) ||
+          (currentLine.match(/^by\s+/i) && currentLine.length > 20); // "by University..." is likely new certification
 
-        if (nextIsEntry) {
+        if (isNewEntry) {
           // This is a new entry, save current bullet and break
-          if (currentBullet) {
-            bullets.push(currentBullet.trim());
-          }
+          bullets.push(currentBullet.trim());
+          bulletSavedBeforeBreak = true;
           break;
         } else {
           // Continue the current bullet (multi-line)
-          currentBullet += " " + lines[i].trim();
+          currentBullet += " " + currentLine;
           i++;
         }
       } else {
-        // No current bullet and line doesn't start with •, might be new entry
-        break;
+        // No current bullet and line doesn't start with •
+        // This could be start of new entry or continuation of subtitle
+        if (
+          currentLine.match(
+            /(Jan\.?|Feb\.?|Mar\.?|Apr\.?|May|June?\.?|July?\.?|Aug\.?|Sep\.?|Oct\.?|Nov\.?|Dec\.?)\s+\d{4}$/i
+          ) ||
+          currentLine.match(/\|/)
+        ) {
+          // New entry
+          break;
+        } else if (subtitle && currentLine.length < 150) {
+          // Might be continuation of subtitle
+          subtitle += " " + currentLine;
+          i++;
+        } else {
+          // Unknown, skip to new entry
+          break;
+        }
       }
     }
 
-    // Don't forget the last bullet
-    if (currentBullet) {
+    // Don't forget the last bullet (but only if we didn't already save it before breaking)
+    if (currentBullet && !bulletSavedBeforeBreak) {
       bullets.push(currentBullet.trim());
+      console.log(
+        `      Saved final bullet: "${currentBullet
+          .trim()
+          .substring(0, 50)}..."`
+      );
     }
 
     if (title && title.length > 2) {
+      console.log(`  ✨ Created entry:`, {
+        title: title.substring(0, 50) + (title.length > 50 ? "..." : ""),
+        subtitle:
+          subtitle.substring(0, 50) + (subtitle.length > 50 ? "..." : ""),
+        location,
+        endDate,
+        bullets: bullets.length,
+      });
       entries.push({
         id: crypto.randomUUID(),
         title,

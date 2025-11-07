@@ -17,6 +17,10 @@ export async function POST(request: NextRequest) {
       );
     }
 
+    console.log("📄 Compiling LaTeX - First 50 lines:");
+    console.log(latex.split('\n').slice(0, 50).join('\n'));
+    console.log("...");
+
     // Create a simple PDF using pdf-lib for development
     const pdfDoc = await PDFDocument.create();
     let page = pdfDoc.addPage([612, 792]); // Letter size
@@ -45,6 +49,7 @@ export async function POST(request: NextRequest) {
     let inCenter = false;
     let currentSection = "";
     let skipNextLines = 0;
+    let inPreamble = true; // Skip everything until \begin{document}
 
     for (let i = 0; i < lines.length; i++) {
       // Skip lines if we consumed them in a multi-line command
@@ -55,6 +60,17 @@ export async function POST(request: NextRequest) {
 
       const line = lines[i].trim();
       if (!line || line.startsWith("%")) continue;
+
+      // Check if we're entering the document body
+      if (line.includes("\\begin{document}")) {
+        inPreamble = false;
+        continue;
+      }
+
+      // Skip EVERYTHING in the preamble
+      if (inPreamble) {
+        continue;
+      }
 
       checkNewPage(20);
 
@@ -85,8 +101,17 @@ export async function POST(request: NextRequest) {
         line.includes("\\titlerule") ||
         line.match(/^[#\$&\\{}]+$/) || // LaTeX special chars
         line.match(/^•\s*small\s*$/) || // • small
-        line.match(/^#\d+\s*&\s*#\d+$/) || // #1 & #2
+        line.match(/^•\s*-?\d+pt\s*$/) || // • -2pt, •-2pt
+        line.match(/^#\d+\s*&\s*#\d+/) || // #1 & #2, #3 & #4
+        line.match(/^#\d+\s*\\vspace/) || // #1 \vspace{-2pt}
+        line.match(/^#\d+\s*\\vspace\{[^}]*\}\}/) || // #1 \vspace{-2pt}}
+        line.match(/^\s*\\vspace\{[^}]*\}\}/) || // \vspace{-2pt}}
+        line.match(/^\s*\\vspace/) || // Standalone \vspace{...}
+        line.match(/^•-?\d+pt/) || // •-2pt (no space)
         line.match(/^\s*\\item\s*$/) || // Empty \item
+        line.trim() === "#1 \\vspace{-2pt}}" || // Exact match for artifact
+        line.trim() === "#3 & #4" || // Exact match for artifact
+        line.trim() === "#1 & #2" || // Exact match for artifact
         line.includes("\\extracolsep") ||
         line.includes("\\textwidth") ||
         line.includes("\\begin{tabular") ||
@@ -375,8 +400,19 @@ export async function POST(request: NextRequest) {
         );
         if (match) {
           const [, company, dates, role, location] = match;
-          
-          console.log("🏢 resumeSubheading - Company:", company, "Dates:", dates, "Role:", role, "Location:", location, "Y:", y);
+
+          console.log(
+            "🏢 resumeSubheading - Company:",
+            company,
+            "Dates:",
+            dates,
+            "Role:",
+            role,
+            "Location:",
+            location,
+            "Y:",
+            y
+          );
 
           // Line 1: Company (left, bold) | Dates (right)
           page.drawText(company, {
@@ -440,7 +476,7 @@ export async function POST(request: NextRequest) {
       ) {
         continue;
       }
-            // Handle \resumeProjectHeading{Project | Tech}{Date}
+      // Handle \resumeProjectHeading{Project | Tech}{Date}
       else if (line.includes("\\resumeProjectHeading")) {
         checkNewPage(30);
 
@@ -449,18 +485,30 @@ export async function POST(request: NextRequest) {
         let lineIdx = i;
         let consumed = 0;
 
-        while ((fullLine.match(/{/g) || []).length < 2 || (fullLine.match(/}/g) || []).length < 2) {
+        while (
+          (fullLine.match(/{/g) || []).length < 2 ||
+          (fullLine.match(/}/g) || []).length < 2
+        ) {
           lineIdx++;
           consumed++;
           if (lineIdx >= lines.length) break;
           fullLine += " " + lines[lineIdx].trim();
         }
 
-        const match = fullLine.match(/\\resumeProjectHeading\s*{([^}]+)}\s*{([^}]*)}/);
+        const match = fullLine.match(
+          /\\resumeProjectHeading\s*{([^}]+)}\s*{([^}]*)}/
+        );
         if (match) {
           const [, projectTech, dates] = match;
-          
-          console.log("🎯 resumeProjectHeading - Title:", projectTech, "Dates:", dates, "Y:", y);
+
+          console.log(
+            "🎯 resumeProjectHeading - Title:",
+            projectTech,
+            "Dates:",
+            dates,
+            "Y:",
+            y
+          );
 
           page.drawText(projectTech, {
             x: margin,
@@ -485,8 +533,7 @@ export async function POST(request: NextRequest) {
         } else {
           console.log("❌ resumeProjectHeading NO MATCH - Line:", fullLine);
         }
-      }
-      else if (line.includes("\\resumeProjectHeading")) {
+      } else if (line.includes("\\resumeProjectHeading")) {
         checkNewPage(30);
 
         // Extract arguments - may be multiline
@@ -734,10 +781,22 @@ export async function POST(request: NextRequest) {
         if (match) {
           const category = match[1];
           const skills = match[2];
-          const text = `${category}: ${skills}`;
 
-          page.drawText(text, {
+          // Draw category in bold
+          page.drawText(category + ": ", {
             x: margin,
+            y: y,
+            size: 9,
+            font: boldFont,
+            color: rgb(0, 0, 0),
+          });
+
+          // Calculate width of category text to position skills after it
+          const categoryWidth = (category.length + 2) * 5.5; // Approximate width
+
+          // Draw skills in regular font
+          page.drawText(skills, {
+            x: margin + categoryWidth,
             y: y,
             size: 9,
             font: font,

@@ -120,7 +120,7 @@ function generateHeader(header: Resume["header"]): string {
   return `%----------HEADING----------
 \\begin{center}
     \\textbf{\\Huge \\scshape ${escapeLaTeX(header.name)}} \\\\ \\vspace{1pt}
-    \\small ${escapeLaTeX(header.phone)} $|$ \\href{mailto:${
+    ${header.location ? `\\small ${escapeLaTeX(header.location)} \\\\ \\vspace{1pt}\n    ` : ""}\\small ${escapeLaTeX(header.phone)} $|$ \\href{mailto:${
     header.email
   }}{\\underline{${escapeLaTeX(header.email)}}}${
     links ? ` $|$\n    ${links}` : ""
@@ -252,7 +252,7 @@ function generateSkills(entry: SkillsEntry): string {
 
 function generateCustom(entry: CustomEntry): string {
   console.log("🎨 generateCustom called with:", JSON.stringify(entry, null, 2));
-  
+
   // Handle single date (for certifications/awards with just one date)
   const singleDate =
     entry.startDate && !entry.endDate ? formatSingleDate(entry.startDate) : "";
@@ -260,31 +260,34 @@ function generateCustom(entry: CustomEntry): string {
     entry.startDate && entry.endDate
       ? formatDateRange(entry.startDate, entry.endDate)
       : "";
-  const displayDate = dateRange || singleDate;
+  const displayDate =
+    dateRange ||
+    singleDate ||
+    (entry.endDate ? formatSingleDate(entry.endDate) : "");
   const hasBullets =
     entry.bullets.length > 0 && entry.bullets.some((b) => b.trim());
 
   // For simple entries (awards, certifications without bullets)
   if (!hasBullets) {
     const subtitle = entry.subtitle || "";
-    const location = entry.location || displayDate || "";
-    
+    const location = entry.location || "";
+
     const latex = `
     \\resumeSubheading
-      {${escapeLaTeX(entry.title)}}{${location}}
-      {${subtitle}}{}`;
+      {${escapeLaTeX(entry.title)}}{${displayDate}}
+      {${subtitle}}{${location}}`;
     console.log("📝 Generated LaTeX (no bullets):", latex);
     return latex;
   }
 
   // For entries with bullets
-  const location = entry.location || displayDate || "";
   const subtitle = entry.subtitle || "";
+  const location = entry.location || "";
 
   const latex = `
     \\resumeSubheading
-      {${escapeLaTeX(entry.title)}}{${location}}
-      {${subtitle}}{}
+      {${escapeLaTeX(entry.title)}}{${displayDate}}
+      {${subtitle}}{${location}}
       \\resumeItemListStart
 ${entry.bullets
   .filter((b) => b.trim())
