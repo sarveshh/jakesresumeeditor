@@ -67,9 +67,17 @@ export default function ImportDialog() {
 
     try {
       const text = await parsePdfToText(file);
+      
+      console.log("=== PDF TEXT EXTRACTED ===");
+      console.log(text);
+      console.log("=========================");
 
       // Parse PDF text to resume structure
       const parsedResume = parsePdfTextToResume(text);
+      
+      console.log("=== PARSED RESUME ===");
+      console.log(JSON.stringify(parsedResume, null, 2));
+      console.log("=====================");
 
       setResume({
         header: { ...resume.header, ...parsedResume.header },

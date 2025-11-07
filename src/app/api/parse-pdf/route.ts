@@ -4,7 +4,8 @@
  */
 
 import { NextRequest, NextResponse } from "next/server";
-import PDFParser from "pdf2json";
+// @ts-expect-error - pdf-parse-fork doesn't have types
+import pdf from "pdf-parse-fork";
 
 export async function POST(request: NextRequest) {
   try {
@@ -22,38 +23,21 @@ export async function POST(request: NextRequest) {
     const arrayBuffer = await pdfFile.arrayBuffer();
     const buffer = Buffer.from(arrayBuffer);
 
-    // Create parser instance
-    const pdfParser = new PDFParser();
+    console.log("=== PDF PARSING START ===");
+    console.log("File size:", buffer.length, "bytes");
 
-    // Parse PDF and extract both text and structure
-    const result = await new Promise<{ text: string; data: unknown }>(
-      (resolve, reject) => {
-        pdfParser.on(
-          "pdfParser_dataError",
-          (errData: Error | { parserError: Error }) => {
-            const error =
-              errData instanceof Error ? errData : errData.parserError;
-            reject(error);
-          }
-        );
+    // Parse PDF with pdf-parse-fork
+    const data = await pdf(buffer);
 
-        pdfParser.on("pdfParser_dataReady", (pdfData) => {
-          // Extract plain text
-          const text = pdfParser.getRawTextContent();
-
-          // Also get structured data for better parsing
-          resolve({ text, data: pdfData });
-        });
-
-        // Parse the buffer
-        pdfParser.parseBuffer(buffer);
-      }
-    );
+    console.log("Text extracted, length:", data.text.length);
+    console.log("Number of pages:", data.numpages);
+    console.log("First 500 chars:", data.text.substring(0, 500));
+    console.log("=== PDF PARSING END ===");
 
     return NextResponse.json({
-      text: result.text,
-      data: result.data, // Include structured PDF data for better parsing
-      pages: 1,
+      text: data.text,
+      pages: data.numpages,
+      info: data.info,
     });
   } catch (error) {
     console.error("PDF parsing error:", error);

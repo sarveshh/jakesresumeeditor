@@ -180,8 +180,8 @@ function generateExperience(entry: ExperienceEntry): string {
 
   return `
     \\resumeSubheading
-      {${escapeLaTeX(entry.company)}}{${escapeLaTeX(entry.location)}}
-      {${escapeLaTeX(entry.role)}}{${dateRange}}${
+      {${escapeLaTeX(entry.company)}}{${dateRange}}
+      {${escapeLaTeX(entry.role)}}{${escapeLaTeX(entry.location)}}${
     hasBullets
       ? `
       \\resumeItemListStart
@@ -201,8 +201,8 @@ function generateEducation(entry: EducationEntry): string {
 
   return `
     \\resumeSubheading
-      {${escapeLaTeX(entry.institution)}}{${escapeLaTeX(entry.location)}}
-      {${escapeLaTeX(entry.degree)}}{${dateRange}}${
+      {${escapeLaTeX(entry.institution)}}{${dateRange}}
+      {${escapeLaTeX(entry.degree)}}{${escapeLaTeX(entry.location)}}${
     hasDetails
       ? `
       \\resumeItemListStart

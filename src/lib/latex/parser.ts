@@ -9,6 +9,7 @@ import {
   ProjectEntry,
   Resume,
   SkillsEntry,
+  CustomEntry,
 } from "../resume-model";
 
 export function parseLatexToResume(latexContent: string): Partial<Resume> {
@@ -50,6 +51,7 @@ export function parseLatexToResume(latexContent: string): Partial<Resume> {
 /**
  * Parse plain text from PDF to resume structure
  * Attempts to intelligently extract resume information from PDF text
+ * This parser is specifically tuned for resumes with inline formatting
  */
 export function parsePdfTextToResume(text: string): Partial<Resume> {
   const resume: Partial<Resume> = {
@@ -62,30 +64,26 @@ export function parsePdfTextToResume(text: string): Partial<Resume> {
     sections: [],
   };
 
-  const lines = text
-    .split("\n")
-    .map((line) => line.trim())
-    .filter((line) => line.length > 0);
+  const lines = text.split('\n').map(line => line.trim()).filter(line => line.length > 0);
 
-  // Extract name (usually first non-empty line with reasonable length)
-  for (const line of lines) {
-    if (line.length > 3 && line.length < 50 && !/[@\d]/.test(line)) {
-      resume.header!.name = line;
-      break;
+  // Extract name (usually first non-empty line)
+  if (lines.length > 0) {
+    const firstLine = lines[0];
+    // Name is usually the first line without special characters
+    if (firstLine.length > 3 && firstLine.length < 50 && !/[@\d+()]/.test(firstLine)) {
+      resume.header!.name = firstLine;
     }
   }
 
-  // Extract email - more robust regex
-  const emailRegex =
-    /([a-zA-Z0-9][a-zA-Z0-9._%+-]*@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,})/g;
+  // Extract email
+  const emailRegex = /([a-zA-Z0-9][a-zA-Z0-9._%+-]*@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,})/g;
   const emailMatches = text.match(emailRegex);
   if (emailMatches && emailMatches.length > 0) {
     resume.header!.email = emailMatches[0];
   }
 
-  // Extract phone - multiple formats
-  const phoneRegex =
-    /(\+?\d{1,3}[-.\s]?)?\(?\d{3}\)?[-.\s]?\d{3}[-.\s]?\d{4}|\+?\d{10,}/g;
+  // Extract phone
+  const phoneRegex = /\+?\d{10,}/g;
   const phoneMatches = text.match(phoneRegex);
   if (phoneMatches && phoneMatches.length > 0) {
     resume.header!.phone = phoneMatches[0];
@@ -93,62 +91,51 @@ export function parsePdfTextToResume(text: string): Partial<Resume> {
 
   // Extract URLs and common platforms
   const links: Array<{ url: string; label: string }> = [];
-
-  // GitHub
-  const githubMatch = text.match(/github\.com\/([a-zA-Z0-9-]+)/i);
-  if (githubMatch) {
-    links.push({
-      url: `https://github.com/${githubMatch[1]}`,
-      label: "GitHub",
-    });
+  
+  // Look for LinkedIn, GitHub, Portfolio in text
+  if (text.includes('LinkedIn')) {
+    const linkedinMatch = text.match(/linkedin\.com\/in\/([a-zA-Z0-9-]+)/i);
+    if (linkedinMatch) {
+      links.push({ url: `https://linkedin.com/in/${linkedinMatch[1]}`, label: 'LinkedIn' });
+    } else {
+      links.push({ url: 'https://linkedin.com/in/yourprofile', label: 'LinkedIn' });
+    }
   }
-
-  // LinkedIn
-  const linkedinMatch = text.match(/linkedin\.com\/in\/([a-zA-Z0-9-]+)/i);
-  if (linkedinMatch) {
-    links.push({
-      url: `https://linkedin.com/in/${linkedinMatch[1]}`,
-      label: "LinkedIn",
-    });
+  
+  if (text.includes('GitHub')) {
+    const githubMatch = text.match(/github\.com\/([a-zA-Z0-9-]+)/i);
+    if (githubMatch) {
+      links.push({ url: `https://github.com/${githubMatch[1]}`, label: 'GitHub' });
+    } else {
+      links.push({ url: 'https://github.com/yourusername', label: 'GitHub' });
+    }
   }
-
-  // Portfolio/website - look for other URLs
-  const urlRegex = /https?:\/\/[^\s]+/g;
-  const urlMatches = text.match(urlRegex);
-  if (urlMatches) {
-    urlMatches.forEach((url) => {
-      if (!url.includes("github.com") && !url.includes("linkedin.com")) {
-        const label = url.includes("portfolio")
-          ? "Portfolio"
-          : url.split("/")[2] || "Website";
-        links.push({ url, label });
-      }
-    });
+  
+  if (text.includes('Portfolio Website')) {
+    links.push({ url: 'https://yourportfolio.com', label: 'Portfolio Website' });
   }
-
+  
   resume.header!.links = links;
 
-  // Parse sections with improved heuristics
-  const sections: Resume["sections"] = [];
+  // Split text into major sections based on headers
+  const sections: Resume['sections'] = [];
+  
+  // Find section positions more reliably
+  const sectionMarkers = [
+    { regex: /^Experience$/im, type: 'experience', title: 'Experience' },
+    { regex: /^Education$/im, type: 'education', title: 'Education' },
+    { regex: /^(Technical\s*)?Skills?$/im, type: 'skills', title: 'Technical Skills' },
+    { regex: /^Projects?$/im, type: 'projects', title: 'Projects' },
+    { regex: /^Awards?$/im, type: 'custom-awards', title: 'Awards' },
+    { regex: /^Certifications?$/im, type: 'custom-certs', title: 'Certifications' },
+  ];
 
-  // Identify section boundaries
-  const sectionHeaders = {
-    education: /\b(EDUCATION|ACADEMIC|QUALIFICATIONS?)\b/i,
-    experience: /\b(EXPERIENCE|EMPLOYMENT|WORK\s*HISTORY)\b/i,
-    projects: /\b(PROJECTS?|PORTFOLIO)\b/i,
-    skills: /\b(SKILLS?|TECHNICAL\s*SKILLS?|TECHNOLOGIES)\b/i,
-  };
-
-  // Find section positions
-  const sectionPositions: Array<{
-    type: string;
-    start: number;
-    title: string;
-  }> = [];
+  const sectionPositions: Array<{ type: string; start: number; title: string }> = [];
+  
   lines.forEach((line, index) => {
-    for (const [type, regex] of Object.entries(sectionHeaders)) {
-      if (regex.test(line)) {
-        sectionPositions.push({ type, start: index, title: line });
+    for (const marker of sectionMarkers) {
+      if (marker.regex.test(line)) {
+        sectionPositions.push({ type: marker.type, start: index, title: marker.title });
         break;
       }
     }
@@ -160,49 +147,57 @@ export function parsePdfTextToResume(text: string): Partial<Resume> {
   // Extract content for each section
   sectionPositions.forEach((section, idx) => {
     const startLine = section.start + 1;
-    const endLine =
-      idx < sectionPositions.length - 1
-        ? sectionPositions[idx + 1].start
-        : lines.length;
+    const endLine = idx < sectionPositions.length - 1 ? sectionPositions[idx + 1].start : lines.length;
     const sectionLines = lines.slice(startLine, endLine);
+    const sectionText = sectionLines.join('\n');
 
-    if (section.type === "education") {
-      const entries = parseEducationSection(sectionLines);
+    if (section.type === 'experience') {
+      const entries = parseExperienceSectionImproved(sectionText);
       if (entries.length > 0) {
         sections.push({
-          id: "education",
-          title: "Education",
-          type: "education",
+          id: 'experience',
+          title: 'Experience',
+          type: 'experience',
           entries,
         });
       }
-    } else if (section.type === "experience") {
-      const entries = parseExperienceSection(sectionLines);
+    } else if (section.type === 'education') {
+      const entries = parseEducationSectionImproved(sectionText);
       if (entries.length > 0) {
         sections.push({
-          id: "experience",
-          title: "Experience",
-          type: "experience",
+          id: 'education',
+          title: 'Education',
+          type: 'education',
           entries,
         });
       }
-    } else if (section.type === "projects") {
-      const entries = parseProjectsSection(sectionLines);
+    } else if (section.type === 'skills') {
+      const entries = parseSkillsSectionImproved(sectionText);
       if (entries.length > 0) {
         sections.push({
-          id: "projects",
-          title: "Projects",
-          type: "projects",
+          id: 'skills',
+          title: 'Technical Skills',
+          type: 'skills',
           entries,
         });
       }
-    } else if (section.type === "skills") {
-      const entries = parseSkillsSection(sectionLines);
+    } else if (section.type === 'custom-awards') {
+      const entries = parseCustomSectionImproved(sectionText);
       if (entries.length > 0) {
         sections.push({
-          id: "skills",
-          title: "Technical Skills",
-          type: "skills",
+          id: 'awards',
+          title: 'Awards',
+          type: 'custom',
+          entries,
+        });
+      }
+    } else if (section.type === 'custom-certs') {
+      const entries = parseCustomSectionImproved(sectionText);
+      if (entries.length > 0) {
+        sections.push({
+          id: 'certifications',
+          title: 'Certifications',
+          type: 'custom',
           entries,
         });
       }
@@ -213,198 +208,208 @@ export function parsePdfTextToResume(text: string): Partial<Resume> {
   return resume;
 }
 
-// Helper functions for parsing sections
-function parseEducationSection(lines: string[]): EducationEntry[] {
-  const entries: EducationEntry[] = [];
-  let currentEntry: Partial<EducationEntry> | null = null;
+// Improved parsers that handle inline formatting better
 
-  for (const line of lines) {
-    // Skip empty lines
-    if (!line) continue;
-
-    // Check for date patterns to identify entry boundaries
-    const dateMatch = line.match(/(\d{4})\s*[-–—]\s*(\d{4}|Present|Current)/i);
-
-    // If line looks like an institution or degree
-    if (
-      !currentEntry ||
-      (line.length > 15 && !line.startsWith("•") && !line.startsWith("-"))
-    ) {
-      if (currentEntry && currentEntry.institution) {
-        entries.push(currentEntry as EducationEntry);
-      }
-
-      currentEntry = {
-        id: crypto.randomUUID(),
-        institution: line
-          .replace(/\d{4}\s*[-–—]\s*(\d{4}|Present|Current)/gi, "")
-          .trim(),
-        degree: "",
-        location: "",
-        startDate: dateMatch ? dateMatch[1] : "",
-        endDate: dateMatch ? dateMatch[2] : "",
-        details: [],
-      };
-
-      // Extract dates if in the same line
-      if (dateMatch) {
-        currentEntry.institution = line
-          .substring(0, line.indexOf(dateMatch[0]))
-          .trim();
-      }
-    } else if (currentEntry) {
-      // Additional details - could be degree, location, or bullet points
-      if (
-        line.includes("Bachelor") ||
-        line.includes("Master") ||
-        line.includes("B.S.") ||
-        line.includes("M.S.")
-      ) {
-        currentEntry.degree = line;
-      } else if (line.startsWith("•") || line.startsWith("-")) {
-        currentEntry.details!.push(line.replace(/^[•\-]\s*/, ""));
-      } else if (!currentEntry.degree) {
-        currentEntry.degree = line;
-      }
-    }
-  }
-
-  if (currentEntry && currentEntry.institution) {
-    entries.push(currentEntry as EducationEntry);
-  }
-
-  return entries.filter((e) => e.institution && e.degree);
-}
-
-function parseExperienceSection(lines: string[]): ExperienceEntry[] {
+function parseExperienceSectionImproved(text: string): ExperienceEntry[] {
   const entries: ExperienceEntry[] = [];
-  let currentEntry: Partial<ExperienceEntry> | null = null;
-
-  for (const line of lines) {
-    if (!line) continue;
-
-    // Check for date patterns
-    const dateMatch = line.match(
-      /(\w+\.?\s+\d{4})\s*[-–—]\s*(\w+\.?\s+\d{4}|Present|Current)/i
-    );
-
-    // Detect new entry - usually company name (longer, not a bullet)
-    if (
-      line.length > 10 &&
-      !line.startsWith("•") &&
-      !line.startsWith("-") &&
-      !currentEntry?.company
-    ) {
-      if (currentEntry && currentEntry.company && currentEntry.role) {
-        entries.push(currentEntry as ExperienceEntry);
-      }
-
-      currentEntry = {
-        id: crypto.randomUUID(),
-        company: line
-          .replace(
-            /\w+\.?\s+\d{4}\s*[-–—]\s*(\w+\.?\s+\d{4}|Present|Current)/gi,
-            ""
-          )
-          .trim(),
-        role: "",
-        location: "",
-        startDate: "",
-        endDate: "",
-        bullets: [],
-      };
-
-      // Extract dates if present
-      if (dateMatch) {
-        currentEntry.company = line
-          .substring(0, line.indexOf(dateMatch[0]))
-          .trim();
-        currentEntry.startDate = dateMatch[1];
-        currentEntry.endDate = dateMatch[2];
-      }
-    } else if (currentEntry) {
-      if (
-        !currentEntry.role &&
-        !line.startsWith("•") &&
-        !line.startsWith("-")
-      ) {
-        // This is likely the role
-        currentEntry.role = line
-          .replace(
-            /\w+\.?\s+\d{4}\s*[-–—]\s*(\w+\.?\s+\d{4}|Present|Current)/gi,
-            ""
-          )
-          .trim();
-
-        if (dateMatch && !currentEntry.startDate) {
-          currentEntry.startDate = dateMatch[1];
-          currentEntry.endDate = dateMatch[2];
+  
+  // Split by company - look for pattern: CompanyNameLocation\nRole...Date
+  // Companies usually end with a city name followed by role on next line
+  const lines = text.split('\n').map(l => l.trim()).filter(l => l);
+  
+  let i = 0;
+  while (i < lines.length) {
+    const line = lines[i];
+    
+    // Skip bullet points
+    if (line.startsWith('•')) {
+      i++;
+      continue;
+    }
+    
+    // Check if this looks like a company line (has location at end like "Mumbai", "Pune", "Delhi")
+    const locationMatch = line.match(/(.*?)(Mumbai|Pune|Delhi|Bangalore|Hyderabad|Chennai|Kolkata|Remote)$/i);
+    
+    if (locationMatch && i + 1 < lines.length) {
+      const company = locationMatch[1].trim();
+      const location = locationMatch[2];
+      const nextLine = lines[i + 1];
+      
+      // Next line should be role and dates
+      // Pattern: RoleMonth Year – Month Year or RoleMonth Year – Present
+      const roleDateMatch = nextLine.match(/^(.*?)(Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)\s+(\d{4})\s*[–-]\s*(.*?)$/i);
+      
+      if (roleDateMatch) {
+        const role = roleDateMatch[1].trim();
+        const startMonth = roleDateMatch[2];
+        const startYear = roleDateMatch[3];
+        const endPart = roleDateMatch[4].trim();
+        
+        let endDate = 'Present';
+        if (endPart !== 'Present') {
+          const endMatch = endPart.match(/(Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)\s+(\d{4})/i);
+          if (endMatch) {
+            endDate = `${endMatch[1]} ${endMatch[2]}`;
+          }
         }
-      } else if (line.startsWith("•") || line.startsWith("-")) {
-        currentEntry.bullets!.push(line.replace(/^[•\-]\s*/, ""));
+        
+        // Collect bullets - join multi-line bullets
+        const bullets: string[] = [];
+        i += 2; // Skip company and role lines
+        
+        let currentBullet = '';
+        while (i < lines.length) {
+          const currentLine = lines[i];
+          
+          if (currentLine.startsWith('•')) {
+            // Save previous bullet if exists
+            if (currentBullet) {
+              bullets.push(currentBullet.trim());
+            }
+            // Start new bullet
+            currentBullet = currentLine.replace(/^•\s*/, '').trim();
+            i++;
+          } else if (currentBullet) {
+            // Check if this line is start of next entry (company line with location)
+            const nextEntryCheck = currentLine.match(/(Mumbai|Pune|Delhi|Bangalore|Hyderabad|Chennai|Kolkata|Remote)$/i);
+            if (nextEntryCheck) {
+              // This is a new entry, stop
+              break;
+            }
+            // Continue the current bullet (multi-line)
+            currentBullet += ' ' + currentLine.trim();
+            i++;
+          } else {
+            // No current bullet, stop
+            break;
+          }
+        }
+        
+        // Don't forget the last bullet
+        if (currentBullet) {
+          bullets.push(currentBullet.trim());
+        }
+        
+        entries.push({
+          id: crypto.randomUUID(),
+          company,
+          role,
+          location,
+          startDate: `${startMonth} ${startYear}`,
+          endDate,
+          bullets,
+        });
+        
+        continue;
       }
     }
+    
+    i++;
   }
-
-  if (currentEntry && currentEntry.company && currentEntry.role) {
-    entries.push(currentEntry as ExperienceEntry);
-  }
-
-  return entries.filter((e) => e.company && e.role);
+  
+  return entries;
 }
 
-function parseProjectsSection(lines: string[]): ProjectEntry[] {
-  const entries: ProjectEntry[] = [];
-  let currentEntry: Partial<ProjectEntry> | null = null;
-
-  for (const line of lines) {
-    if (!line) continue;
-
-    // New project - not a bullet point
-    if (line.length > 5 && !line.startsWith("•") && !line.startsWith("-")) {
-      if (currentEntry && currentEntry.name) {
-        entries.push(currentEntry as ProjectEntry);
-      }
-
-      // Check if technologies are in the same line (e.g., "Project Name | React, Node.js")
-      const techSplit = line.split(/[|–—]/);
-
-      currentEntry = {
-        id: crypto.randomUUID(),
-        name: techSplit[0].trim(),
-        technologies: techSplit.length > 1 ? techSplit[1].trim() : "",
-        startDate: "",
-        endDate: "",
-        bullets: [],
-      };
-    } else if (currentEntry && (line.startsWith("•") || line.startsWith("-"))) {
-      currentEntry.bullets!.push(line.replace(/^[•\-]\s*/, ""));
+function parseEducationSectionImproved(text: string): EducationEntry[] {
+  const entries: EducationEntry[] = [];
+  const lines = text.split('\n').map(l => l.trim()).filter(l => l);
+  
+  let i = 0;
+  while (i < lines.length) {
+    const line = lines[i];
+    
+    // Skip bullets and section headers
+    if (line.startsWith('•') || line === 'Awards' || line === 'Certifications') {
+      i++;
+      continue;
     }
+    
+    // University name usually has location
+    const locationMatch = line.match(/(.*?)(Mumbai|Pune|Delhi|Bangalore|Hyderabad|Chennai|Kolkata)$/i);
+    
+    if (locationMatch && i + 1 < lines.length) {
+      const institution = locationMatch[1].trim();
+      const location = locationMatch[2];
+      const nextLine = lines[i + 1];
+      
+      // Next line is degree
+      if (!nextLine.startsWith('•')) {
+        const degree = nextLine;
+        
+        // Collect details - join multi-line details
+        const details: string[] = [];
+        i += 2;
+        
+        let currentDetail = '';
+        while (i < lines.length) {
+          const currentLine = lines[i];
+          
+          if (currentLine.startsWith('•')) {
+            // Save previous detail if exists
+            if (currentDetail) {
+              details.push(currentDetail.trim());
+            }
+            // Start new detail
+            currentDetail = currentLine.replace(/^•\s*/, '').trim();
+            i++;
+          } else if (currentDetail) {
+            // Check if this is start of next section or entry
+            const nextSectionCheck = currentLine.match(/^(Awards|Certifications|Technical Skills|Experience|Projects)$/i);
+            const nextEntryCheck = currentLine.match(/(Mumbai|Pune|Delhi|Bangalore|Hyderabad|Chennai|Kolkata)$/i);
+            
+            if (nextSectionCheck || nextEntryCheck) {
+              // This is a new section/entry, stop
+              break;
+            }
+            // Continue the current detail (multi-line)
+            currentDetail += ' ' + currentLine.trim();
+            i++;
+          } else {
+            // No current detail, stop
+            break;
+          }
+        }
+        
+        // Don't forget the last detail
+        if (currentDetail) {
+          details.push(currentDetail.trim());
+        }
+        
+        entries.push({
+          id: crypto.randomUUID(),
+          institution,
+          degree,
+          location,
+          startDate: '',
+          endDate: '',
+          details,
+        });
+        
+        continue;
+      }
+    }
+    
+    i++;
   }
-
-  if (currentEntry && currentEntry.name) {
-    entries.push(currentEntry as ProjectEntry);
-  }
-
-  return entries.filter((e) => e.name);
+  
+  return entries;
 }
 
-function parseSkillsSection(lines: string[]): SkillsEntry[] {
+function parseSkillsSectionImproved(text: string): SkillsEntry[] {
   const entries: SkillsEntry[] = [];
-
+  const lines = text.split('\n').map(l => l.trim()).filter(l => l);
+  
   for (const line of lines) {
-    if (!line) continue;
-
-    // Skills are usually in format: "Category: skill1, skill2, skill3"
-    if (line.includes(":")) {
-      const colonIndex = line.indexOf(":");
+    // Skills format: "Category: skill1, skill2, skill3"
+    const colonIndex = line.indexOf(':');
+    if (colonIndex > 0) {
       const category = line.substring(0, colonIndex).trim();
       const skillsText = line.substring(colonIndex + 1).trim();
-
+      
       const skills = skillsText
-        .split(/[,;|]/)
-        .map((s) => s.trim())
-        .filter((s) => s.length > 0);
+        .split(',')
+        .map(s => s.trim())
+        .filter(s => s.length > 0);
 
       if (skills.length > 0) {
         entries.push({
@@ -415,7 +420,125 @@ function parseSkillsSection(lines: string[]): SkillsEntry[] {
       }
     }
   }
+  
+  return entries;
+}
 
+function parseCustomSectionImproved(text: string): CustomEntry[] {
+  const entries: CustomEntry[] = [];
+  const lines = text.split('\n').map(l => l.trim()).filter(l => l);
+  
+  let i = 0;
+  while (i < lines.length) {
+    const line = lines[i];
+    
+    // Skip bullets
+    if (line.startsWith('•')) {
+      i++;
+      continue;
+    }
+    
+    // Entry title line - look for various patterns
+    // Pattern 1: "Title | Location | Date"
+    // Pattern 2: "Title Date" (e.g., "Global Assessment...Jan 2021")
+    // Pattern 3: "Titleby Institution" (e.g., "React Specialisation...by University")
+    
+    let title = line;
+    let subtitle = '';
+    let location = '';
+    let endDate = '';
+    
+    // Check for "by" pattern (certifications)
+    const byMatch = line.match(/(.*?)\s+by\s+(.+?)(\||$)/i);
+    if (byMatch) {
+      title = byMatch[1].trim();
+      subtitle = 'by ' + byMatch[2].trim();
+      
+      // Check for date at the end
+      const dateMatch = line.match(/(Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)\s+(\d{4})$/i);
+      if (dateMatch) {
+        endDate = `${dateMatch[1]} ${dateMatch[2]}`;
+        // Remove date from subtitle if it's there
+        subtitle = subtitle.replace(new RegExp(endDate + '$'), '').trim();
+      }
+    } else {
+      // Check for date at end
+      const dateMatch = line.match(/(.*?)(Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)\s+(\d{4})$/i);
+      if (dateMatch) {
+        title = dateMatch[1].trim();
+        endDate = `${dateMatch[2]} ${dateMatch[3]}`;
+      }
+      
+      // Check for location pipe pattern (e.g., "Title | Location")
+      const pipeLocationMatch = title.match(/(.*?)\|\s*(Mumbai|Pune|Delhi|Bangalore|Hyderabad|Chennai|Kolkata)/i);
+      if (pipeLocationMatch) {
+        title = pipeLocationMatch[1].trim();
+        location = pipeLocationMatch[2].trim();
+      } else {
+        // Check for location at end of title (e.g., "Smart India Hackathon 2020 FinalistDelhi")
+        const locationEndMatch = title.match(/(.*?)(Mumbai|Pune|Delhi|Bangalore|Hyderabad|Chennai|Kolkata)$/i);
+        if (locationEndMatch) {
+          title = locationEndMatch[1].trim();
+          location = locationEndMatch[2];
+        }
+      }
+    }
+    
+    // Collect bullets - join multi-line bullets
+    const bullets: string[] = [];
+    i++;
+    
+    let currentBullet = '';
+    while (i < lines.length) {
+      if (lines[i].startsWith('•')) {
+        // Save previous bullet if exists
+        if (currentBullet) {
+          bullets.push(currentBullet.trim());
+        }
+        // Start new bullet
+        currentBullet = lines[i].replace(/^•\s*/, '').trim();
+        i++;
+      } else if (currentBullet) {
+        // Check if this line is the start of a new entry
+        const nextIsEntry = lines[i].match(/(Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)\s+\d{4}$/i) ||
+                            lines[i].match(/by\s+/i) ||
+                            lines[i].match(/(Mumbai|Pune|Delhi|Bangalore|Hyderabad|Chennai|Kolkata)$/i);
+        
+        if (nextIsEntry) {
+          // This is a new entry, save current bullet and break
+          if (currentBullet) {
+            bullets.push(currentBullet.trim());
+          }
+          break;
+        } else {
+          // Continue the current bullet (multi-line)
+          currentBullet += ' ' + lines[i].trim();
+          i++;
+        }
+      } else {
+        // No current bullet and line doesn't start with •, might be new entry
+        break;
+      }
+    }
+    
+    // Don't forget the last bullet
+    if (currentBullet) {
+      bullets.push(currentBullet.trim());
+    }
+    
+    if (title && title.length > 2) {
+      entries.push({
+        id: crypto.randomUUID(),
+        title,
+        subtitle,
+        location,
+        startDate: '',
+        endDate,
+        bullets,
+      });
+    }
+  }
+  
   return entries;
 }
 

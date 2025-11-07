@@ -41,27 +41,24 @@ export async function POST(request: NextRequest) {
     // Simple text rendering from LaTeX
     const lines = latex.split("\n");
 
-    page.drawText("DEVELOPMENT PREVIEW - Install Tectonic for production", {
-      x: margin,
-      y: y,
-      size: 8,
-      font: font,
-      color: rgb(0.6, 0.6, 0.6),
-    });
-
-    y -= 25;
-
     // Parse and render content
-    let inTabular = false;
+    let inCenter = false;
     let currentSection = "";
+    let skipNextLines = 0;
 
     for (let i = 0; i < lines.length; i++) {
+      // Skip lines if we consumed them in a multi-line command
+      if (skipNextLines > 0) {
+        skipNextLines--;
+        continue;
+      }
+      
       const line = lines[i].trim();
       if (!line || line.startsWith("%")) continue;
 
       checkNewPage(20);
 
-      // Skip preamble and document commands
+      // Skip preamble and document commands - but BEFORE \begin{document}
       if (
         line.startsWith("\\documentclass") ||
         line.startsWith("\\usepackage") ||
@@ -75,20 +72,53 @@ export async function POST(request: NextRequest) {
         line.startsWith("\\pdfgentounicode") ||
         line.startsWith("\\titleformat") ||
         line.startsWith("\\newcommand") ||
+        line.startsWith("\\renewcommand") ||
+        line.startsWith("\\input{") ||
+        line.startsWith("\\pagestyle") ||
+        line.startsWith("\\fancyhf") ||
+        line.startsWith("\\fancyfoot") ||
         line.includes("\\resumeSubHeadingListStart") ||
         line.includes("\\resumeSubHeadingListEnd") ||
         line.includes("\\resumeItemListStart") ||
-        line.includes("\\resumeItemListEnd")
+        line.includes("\\resumeItemListEnd") ||
+        line.includes("\\color{black}") ||
+        line.includes("\\titlerule") ||
+        line.match(/^[#\$&\\{}]+$/) || // LaTeX special chars
+        line.match(/^•\s*small\s*$/) || // • small
+        line.match(/^#\d+\s*&\s*#\d+$/) || // #1 & #2
+        line.match(/^\s*\\item\s*$/) || // Empty \item
+        line.includes("\\extracolsep") ||
+        line.includes("\\textwidth") ||
+        line.includes("\\begin{tabular") ||
+        line.includes("\\end{tabular") ||
+        line.includes("\\textbf{#") ||
+        line.includes("\\textit{#") ||
+        line === "}" || // Standalone closing brace
+        line === "{" || // Standalone opening brace
+        line.includes("%%%%%%") // Comment separators
       ) {
+        continue;
+      }
+
+      // Center environment for header
+      if (line.includes("\\begin{center}")) {
+        inCenter = true;
+        y -= 5;
+        continue;
+      }
+      if (line.includes("\\end{center}")) {
+        inCenter = false;
+        y -= 15;
         continue;
       }
 
       // Header - Extract name from \Huge \scshape
       if (line.includes("\\Huge") && line.includes("\\scshape")) {
         // Extract text between \scshape and end of line
-        const nameMatch = line.match(/\\scshape\s+([^\\]+)/);
+        const nameMatch = line.match(/\\scshape\s+([^\\}]+)/);
         if (nameMatch) {
           const name = nameMatch[1].trim().replace(/[{}]/g, "");
+          checkNewPage(25);
           page.drawText(name, {
             x: width / 2 - name.length * 6,
             y: y,
@@ -101,27 +131,21 @@ export async function POST(request: NextRequest) {
         continue;
       }
 
-      // Contact info - parse the tabular environment
-      if (line.includes("\\begin{tabular}")) {
-        inTabular = true;
-        continue;
-      }
-      if (line.includes("\\end{tabular}")) {
-        inTabular = false;
-        y -= 5;
-        continue;
-      }
-      if (inTabular) {
-        // Parse contact line: \small \href{url}{text} $|$ \href{url}{text}
+      // Contact line in center (with \small, \href, $|$)
+      if (inCenter && (line.includes("\\small") || line.includes("\\href") || line.includes("$|$"))) {
         const contact = line
           .replace(/\\small/g, "")
-          .replace(/\\href{([^}]+)}{([^}]+)}/g, "$2")
+          .replace(/\\href\{([^}]+)\}\{\\underline\{([^}]+)\}\}/g, "$2")
+          .replace(/\\href\{mailto:([^}]+)\}\{\\underline\{([^}]+)\}\}/g, "$2")
+          .replace(/\\href\{([^}]+)\}\{([^}]+)\}/g, "$2")
           .replace(/\$\|\$/g, " | ")
+          .replace(/\\n\s*/g, " ")
           .replace(/\\\\/g, "")
           .replace(/[{}]/g, "")
           .trim();
 
-        if (contact && contact.length > 0 && contact.length < 200) {
+        if (contact && contact.length > 0 && contact.length < 250) {
+          checkNewPage(15);
           page.drawText(contact, {
             x: width / 2 - contact.length * 2.5,
             y: y,
@@ -163,14 +187,37 @@ export async function POST(request: NextRequest) {
       // Handle \resumeSubheading{Company}{Date}{Role}{Location}
       else if (line.includes("\\resumeSubheading")) {
         checkNewPage(40);
+        // Extract the four arguments - they span multiple lines
+        let fullLine = line;
+        let lineIdx = i;
+        let consumed = 0;
+        
+        // Keep reading lines until we have all 4 arguments (4 opening and 4 closing braces)
+        let openBraces = (fullLine.match(/{/g) || []).length;
+        let closeBraces = (fullLine.match(/}/g) || []).length;
+        
+        while (openBraces < 4 || closeBraces < 4 || openBraces !== closeBraces) {
+          lineIdx++;
+          consumed++;
+          if (lineIdx >= lines.length) break;
+          const nextLine = lines[lineIdx].trim();
+          if (!nextLine) continue; // Skip empty lines
+          fullLine += " " + nextLine;
+          openBraces = (fullLine.match(/{/g) || []).length;
+          closeBraces = (fullLine.match(/}/g) || []).length;
+          
+          // Safety break if we've consumed too many lines
+          if (consumed > 10) break;
+        }
+        
         // Extract the four arguments
-        const match = line.match(
-          /\\resumeSubheading{([^}]+)}{([^}]+)}{([^}]+)}{([^}]+)}/
+        const match = fullLine.match(
+          /\\resumeSubheading\s*{([^}]+)}\s*{([^}]+)}\s*{([^}]+)}\s*{([^}]+)}/
         );
         if (match) {
           const [, company, dates, role, location] = match;
 
-          // Line 1: Company (left) | Dates (right)
+          // Line 1: Company (left, bold) | Dates (right)
           page.drawText(company, {
             x: margin,
             y: y,
@@ -179,13 +226,16 @@ export async function POST(request: NextRequest) {
             color: rgb(0, 0, 0),
           });
 
-          page.drawText(dates, {
-            x: width - margin - dates.length * 5.5,
-            y: y,
-            size: 10,
-            font: font,
-            color: rgb(0, 0, 0),
-          });
+          const cleanDates = dates.replace(/--/g, "–").trim();
+          if (cleanDates) {
+            page.drawText(cleanDates, {
+              x: width - margin - cleanDates.length * 5.5,
+              y: y,
+              size: 10,
+              font: font,
+              color: rgb(0, 0, 0),
+            });
+          }
           y -= 12;
 
           // Line 2: Role (left, italic) | Location (right, italic)
@@ -197,20 +247,56 @@ export async function POST(request: NextRequest) {
             color: rgb(0, 0, 0),
           });
 
-          page.drawText(location, {
-            x: width - margin - location.length * 5.5,
-            y: y,
-            size: 10,
-            font: italicFont,
-            color: rgb(0, 0, 0),
-          });
+          if (location.trim()) {
+            page.drawText(location, {
+              x: width - margin - location.length * 5.5,
+              y: y,
+              size: 10,
+              font: italicFont,
+              color: rgb(0, 0, 0),
+            });
+          }
           y -= 14;
+          
+          // Skip the lines we consumed
+          skipNextLines = consumed;
         }
+      }
+      // Also catch bare brace lines that might be arguments to commands above
+      else if (line.match(/^\s*{[^}]*}\s*{[^}]*}\s*$/)) {
+        // This is likely part of a command we should have caught - skip it
+        continue;
+      }
+      else if (line.match(/^\s*{[^}]*}\s*$/)) {
+        // Single argument line - skip it
+        continue;
+      }
+      // Skip lines that look like they're from the preamble or template definition
+      else if (
+        line.match(/^--\s*$/) || // Just dashes
+        line.match(/^\\\\+\s*$/) || // Just line breaks
+        line.match(/^[&\\]+$/) || // Ampersands and backslashes
+        line.length < 3 // Very short lines that are probably artifacts
+      ) {
+        continue;
       }
       // Handle \resumeProjectHeading{Project | Tech}{Date}
       else if (line.includes("\\resumeProjectHeading")) {
         checkNewPage(30);
-        const match = line.match(/\\resumeProjectHeading{([^}]+)}{([^}]+)}/);
+        
+        // Extract arguments - may be multiline
+        let fullLine = line;
+        let lineIdx = i;
+        let consumed = 0;
+        
+        while ((fullLine.match(/{/g) || []).length < 2 || (fullLine.match(/}/g) || []).length < 2) {
+          lineIdx++;
+          consumed++;
+          if (lineIdx >= lines.length) break;
+          fullLine += " " + lines[lineIdx].trim();
+        }
+        
+        const match = fullLine.match(/\\resumeProjectHeading\s*{([^}]+)}\s*{([^}]*)}/);
         if (match) {
           const [, projectTech, dates] = match;
 
@@ -222,9 +308,10 @@ export async function POST(request: NextRequest) {
             color: rgb(0, 0, 0),
           });
 
-          if (dates) {
-            page.drawText(dates, {
-              x: width - margin - dates.length * 5.5,
+          if (dates && dates.trim()) {
+            const cleanDates = dates.replace(/--/g, "–");
+            page.drawText(cleanDates, {
+              x: width - margin - cleanDates.length * 5.5,
               y: y,
               size: 10,
               font: font,
@@ -232,6 +319,7 @@ export async function POST(request: NextRequest) {
             });
           }
           y -= 14;
+          skipNextLines = consumed;
         }
       }
       // Handle \resumeItem{text}
@@ -366,19 +454,22 @@ export async function POST(request: NextRequest) {
       // Itemize environment (for skills bullets)
       else if (line.includes("\\begin{itemize}")) {
         y -= 2;
+        continue;
       } else if (line.includes("\\end{itemize}")) {
         y -= 6;
+        continue;
       }
-      // Bullet points
-      else if (line.includes("\\item")) {
+      // Bullet points - but skip if it's just wrapping (has \small{\item{)
+      else if (line.includes("\\item") && !line.includes("\\small{\\item{")) {
         checkNewPage(15);
         const text = line
           .replace(/\\item/g, "")
+          .replace(/\\small/g, "") // Remove \small
           .replace(/\\[a-zA-Z]+{([^}]+)}/g, "$1")
           .replace(/[{}\\]/g, "")
           .trim();
 
-        if (text && text.length > 0) {
+        if (text && text.length > 0 && !text.match(/^(small|item)$/)) {
           // Bullet point
           page.drawText("•", {
             x: margin + 8,
@@ -425,11 +516,32 @@ export async function POST(request: NextRequest) {
           }
         }
       }
-      // Skills (category: skills)
+      // Skills (category: skills) - handle \textbf{Category}{: value}
+      else if (line.includes("\\textbf{") && line.includes("}{:")) {
+        checkNewPage(15);
+        // Extract category and skills: \textbf{Languages}{: Python, JavaScript, SQL}
+        const match = line.match(/\\textbf\{([^}]+)\}\{:\s*([^}]+)\}/);
+        if (match) {
+          const category = match[1];
+          const skills = match[2];
+          const text = `${category}: ${skills}`;
+          
+          page.drawText(text, {
+            x: margin,
+            y: y,
+            size: 9,
+            font: font,
+            color: rgb(0, 0, 0),
+          });
+          y -= 11;
+        }
+      }
+      // Skills (category: skills) - plain format
       else if (
         line.includes(":") &&
         !line.includes("\\") &&
-        line.length < 200
+        line.length < 200 &&
+        !line.includes("small") // Skip lines with "small"
       ) {
         checkNewPage(15);
         const text = line
@@ -449,6 +561,21 @@ export async function POST(request: NextRequest) {
       }
       // Regular text (degrees, details without bullets)
       else if (!line.startsWith("\\") && line.length > 0 && line.length < 200) {
+        // Skip lines that are just curly braces (LaTeX artifacts)
+        if (line.match(/^[{}]+$/) || line.match(/^{[^}]*}$/)) {
+          continue;
+        }
+        
+        // Skip lines that look like standalone dates (e.g., "Jun 2023 – Present")
+        if (line.match(/^\w{3}\s+\d{4}\s*[–-]\s*(\w{3}\s+\d{4}|Present)$/i)) {
+          continue;
+        }
+        
+        // Skip lines that are just city names (common locations)
+        if (line.match(/^(Mumbai|Pune|Delhi|Bangalore|Hyderabad|Chennai|Kolkata|Remote)$/i)) {
+          continue;
+        }
+        
         checkNewPage(15);
         const text = line.trim();
         if (text && !text.match(/^(begin|end|document|item)/)) {
